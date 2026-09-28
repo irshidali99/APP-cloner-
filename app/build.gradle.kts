@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
@@ -21,7 +23,7 @@ plugins {
  * keystore that used to be committed by accident.
  */
 val keystorePropertiesFile = rootProject.file("keystore.properties")
-val keystoreProperties = java.util.Properties().apply {
+val keystoreProperties = Properties().apply {
   if (keystorePropertiesFile.exists()) {
     keystorePropertiesFile.inputStream().use { load(it) }
   }
