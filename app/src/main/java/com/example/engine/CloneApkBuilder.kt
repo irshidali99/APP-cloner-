@@ -1,329 +1,291 @@
 package com.example.engine
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.RectF
+import com.example.engine.core.ApkSignatureSchemeV2
+import com.example.engine.core.ApkTransformer
+import com.example.engine.core.ArscEditor
+import com.example.engine.core.CloneReport
+import com.example.engine.core.CloneRequest
+import com.example.engine.core.ZipArchive
 import com.example.model.CloneConfig
 import com.example.model.CompatibilityReport
 import com.example.model.InstalledApp
 import com.example.model.PipelineProgress
 import com.example.model.PipelineStage
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
-import java.io.ByteArrayOutputStream
 import java.io.File
-import java.io.FileInputStream
-import java.io.FileOutputStream
-import java.nio.charset.StandardCharsets
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.zip.ZipEntry
-import java.util.zip.ZipInputStream
-import java.util.zip.ZipOutputStream
 
+/**
+ * Builds a standalone clone of an installed application.
+ *
+ * Pipeline:
+ *  1. inspect the source APK (readable, has a manifest and a resource table),
+ *  2. validate compatibility (system app, split APK, package name that fits the resource table),
+ *  3. render the custom launcher icon and rewrite manifest + resource table,
+ *  4. sign with the persistent local identity (JAR v1 during the rewrite, APK Signature Scheme v2 after),
+ *  5. verify the output before it is offered for installation.
+ *
+ * All work is streamed; the generated APK never has to fit into memory.
+ */
 class CloneApkBuilder(
-    private val packageInspector: PackageInspector
+    private val packageInspector: PackageInspector,
+    private val keystore: CloneKeystore
 ) : CloneEngine {
 
-    override fun checkCompatibility(app: InstalledApp): CompatibilityReport {
-        return CompatibilityReport.evaluate(app)
-    }
+    override fun checkCompatibility(app: InstalledApp): CompatibilityReport =
+        CompatibilityReport.evaluate(app)
 
     override suspend fun executeClonePipeline(
         context: Context,
         sourceApp: InstalledApp,
         config: CloneConfig,
         onProgress: (PipelineProgress) -> Unit
-    ): Result<File> = withContext(Dispatchers.IO) {
+    ): Result<CloneOutcome> = withContext(Dispatchers.IO) {
+        val startedAt = System.currentTimeMillis()
         val logs = mutableListOf<String>()
-        val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.US)
+        val clock = SimpleDateFormat("HH:mm:ss", Locale.US)
 
-        fun log(msg: String) {
-            val entry = "[${timeFormat.format(Date())}] $msg"
-            logs.add(entry)
+        fun log(message: String) {
+            logs.add("[${clock.format(Date())}] $message")
         }
 
-        log("Pipeline initiated for '${sourceApp.label}' (${sourceApp.packageName})")
-        log("Target clone package ID: ${config.clonePackageId}")
-
-        // Stage 1: Inspect Source
-        onProgress(
-            PipelineProgress(
-                stage = PipelineStage.INSPECT_SOURCE,
-                progressFraction = 0.15f,
-                detailMessage = "Inspecting source package and reading archive headers...",
-                logHistory = logs.toList()
-            )
-        )
-        delay(350)
-        log("Inspecting source directory: ${sourceApp.sourceDir}")
-        log("Package version: ${sourceApp.versionName} (Code: ${sourceApp.versionCode})")
-        log("Source APK size: ${sourceApp.apkSizeBytes / 1024} KB")
-
-        // Stage 2: Validate Compatibility
-        onProgress(
-            PipelineProgress(
-                stage = PipelineStage.VALIDATE_COMPATIBILITY,
-                progressFraction = 0.35f,
-                detailMessage = "Validating package architecture and security constraints...",
-                logHistory = logs.toList()
-            )
-        )
-        delay(400)
-
-        val report = checkCompatibility(sourceApp)
-        if (!report.isSupported) {
-            log("[ERROR] Compatibility check failed: ${report.formatDescription}")
-            log("[REASON] ${report.signatureRestrictionsNote}")
-            log("[TECH] ${report.technicalDetails}")
-            val errorMsg = "${report.formatDescription}: ${report.signatureRestrictionsNote}"
+        fun emit(
+            stage: PipelineStage,
+            fraction: Float,
+            detail: String,
+            complete: Boolean = false,
+            failed: Boolean = false,
+            error: String? = null,
+            outcome: CloneOutcome? = null
+        ) {
             onProgress(
                 PipelineProgress(
-                    stage = PipelineStage.FAILED,
-                    progressFraction = 0.35f,
-                    detailMessage = "Stopped: $errorMsg",
+                    stage = stage,
+                    progressFraction = fraction,
+                    detailMessage = detail,
                     logHistory = logs.toList(),
-                    isFailed = true,
-                    errorMessage = errorMsg
+                    isComplete = complete,
+                    isFailed = failed,
+                    errorMessage = error,
+                    outputApkPath = outcome?.apkFile?.absolutePath,
+                    outputPackageId = outcome?.report?.newPackage,
+                    outputCloneName = outcome?.report?.newLabel
                 )
             )
-            return@withContext Result.failure(IllegalStateException(errorMsg))
         }
 
-        log("Compatibility verified: Monolithic standalone package.")
-        log("Notice: Clone will be self-signed with local sandbox certificate.")
+        fun fail(stage: PipelineStage, fraction: Float, message: String): Result<CloneOutcome> {
+            log("[ERROR] $message")
+            emit(stage, fraction, message, failed = true, error = message)
+            return Result.failure(IllegalStateException(message))
+        }
 
-        // Stage 3: Prepare Package
-        onProgress(
-            PipelineProgress(
-                stage = PipelineStage.PREPARE_PACKAGE,
-                progressFraction = 0.60f,
-                detailMessage = "Preparing clone filesystem and customizing icon badge...",
-                logHistory = logs.toList()
-            )
-        )
-        delay(450)
-
-        val cacheWorkspace = File(context.cacheDir, "clone_workspace_${System.currentTimeMillis()}").apply {
+        val workspace = File(context.cacheDir, "clone-workspace").apply {
+            deleteRecursively()
             mkdirs()
         }
-        val intermediateUnsignedApk = File(cacheWorkspace, "intermediate_unsigned.apk")
 
         try {
-            log("Workspace allocated: ${cacheWorkspace.name}")
+            // ---------------------------------------------------------------- 1. inspect
+            emit(
+                PipelineStage.INSPECT_SOURCE, 0.08f,
+                "Reading ${sourceApp.label} (${sourceApp.packageName})"
+            )
+            log("Source: ${sourceApp.label} ${sourceApp.versionName} (${sourceApp.packageName})")
+            log("Source APK: ${sourceApp.sourceDir}")
 
-            // Generate or transform APK
-            if (sourceApp.packageName == "com.aistudio.demo.counter" || !File(sourceApp.sourceDir).exists()) {
-                log("Building standalone prototype package with custom manifest...")
-                buildDemoApk(context, intermediateUnsignedApk, config)
-            } else {
-                log("Transforming standalone source APK...")
-                transformSourceApk(File(sourceApp.sourceDir), intermediateUnsignedApk, config)
+            val sourceApk = File(sourceApp.sourceDir)
+            if (!sourceApk.isFile || !sourceApk.canRead()) {
+                return@withContext fail(
+                    PipelineStage.FAILED, 0.08f,
+                    "The source APK cannot be read on this device (${sourceApp.sourceDir})."
+                )
             }
 
-            log("Intermediate package assembled: ${intermediateUnsignedApk.length() / 1024} KB")
-
-            // Stage 4: Sign Package
-            onProgress(
-                PipelineProgress(
-                    stage = PipelineStage.BUILD_SIGN,
-                    progressFraction = 0.85f,
-                    detailMessage = "Applying cryptographic signature and manifest hashes...",
-                    logHistory = logs.toList()
-                )
-            )
-            delay(500)
-
-            val outputDir = File(context.filesDir, "clones").apply { mkdirs() }
-            val sanitizedCloneName = config.cloneName.replace(Regex("[^a-zA-Z0-9_]"), "_")
-            val outputApkFile = File(outputDir, "${sanitizedCloneName}_${System.currentTimeMillis()}.apk")
-
-            log("Generating local 2048-bit RSA keypair in app storage...")
-            val signed = ApkSignerUtil.signApk(context, intermediateUnsignedApk, outputApkFile)
-            if (!signed) {
-                val signError = "Failed to cryptographically sign output package."
-                log("[ERROR] $signError")
-                onProgress(
-                    PipelineProgress(
-                        stage = PipelineStage.FAILED,
-                        progressFraction = 0.85f,
-                        detailMessage = signError,
-                        logHistory = logs.toList(),
-                        isFailed = true,
-                        errorMessage = signError
-                    )
-                )
-                return@withContext Result.failure(IllegalStateException(signError))
-            }
-            log("Cryptographic signature applied (SHA-256 with RSA).")
-
-            // Stage 5: Verify Output
-            onProgress(
-                PipelineProgress(
-                    stage = PipelineStage.VERIFY_OUTPUT,
-                    progressFraction = 0.98f,
-                    detailMessage = "Verifying package integrity and readiness for installation...",
-                    logHistory = logs.toList()
-                )
-            )
-            delay(300)
-
-            if (!outputApkFile.exists() || outputApkFile.length() == 0L) {
-                val verifyError = "Output APK file was not written properly."
-                log("[ERROR] $verifyError")
-                return@withContext Result.failure(IllegalStateException(verifyError))
+            val archive = ZipArchive(sourceApk)
+            val hasManifest: Boolean
+            val hasResourceTable: Boolean
+            val largestEntry: Long
+            val totalSize: Long
+            try {
+                hasManifest = archive.findEntry(ApkTransformer.MANIFEST) != null
+                hasResourceTable = archive.findEntry(ApkTransformer.RESOURCES) != null
+                largestEntry = archive.entries.maxOfOrNull { it.uncompressedSize } ?: 0L
+                totalSize = sourceApk.length()
+            } finally {
+                archive.close()
             }
 
-            log("Integrity verified: ${outputApkFile.length() / 1024} KB written.")
-            log("APK file stored at: ${outputApkFile.absolutePath}")
-            log("Success: Ready for system installation handoff.")
+            log("Source APK size: ${totalSize / 1024} KB")
 
-            // Stage 6: Completed
-            onProgress(
-                PipelineProgress(
-                    stage = PipelineStage.COMPLETED,
-                    progressFraction = 1.0f,
-                    detailMessage = "Clone ready for installation!",
-                    logHistory = logs.toList(),
-                    isComplete = true,
-                    outputApkPath = outputApkFile.absolutePath,
-                    outputPackageId = config.clonePackageId,
-                    outputCloneName = config.cloneName
+            // ---------------------------------------------------------------- 2. validate
+            emit(PipelineStage.VALIDATE_COMPATIBILITY, 0.22f, "Validating package and signature constraints")
+
+            val compatibility = checkCompatibility(sourceApp)
+            if (!compatibility.isSupported) {
+                log("[ERROR] ${compatibility.formatDescription}")
+                log("[REASON] ${compatibility.signatureRestrictionsNote}")
+                return@withContext fail(
+                    PipelineStage.FAILED, 0.22f,
+                    "${compatibility.formatDescription}: ${compatibility.signatureRestrictionsNote}"
                 )
+            }
+            if (!hasManifest || !hasResourceTable) {
+                return@withContext fail(
+                    PipelineStage.FAILED, 0.22f,
+                    "The source APK has no AndroidManifest.xml or resources.arsc and cannot be re-targeted."
+                )
+            }
+            if (totalSize > MAX_SUPPORTED_BYTES || largestEntry > MAX_SUPPORTED_BYTES) {
+                return@withContext fail(
+                    PipelineStage.FAILED, 0.22f,
+                    "APKs above ${MAX_SUPPORTED_BYTES / (1024 * 1024)} MB are not supported by the current writer."
+                )
+            }
+
+            val validation = config.validate()
+            if (!validation.isValid) {
+                return@withContext fail(
+                    PipelineStage.FAILED, 0.22f,
+                    validation.error ?: "The clone configuration is invalid."
+                )
+            }
+
+            val capacity = runCatching {
+                ZipArchive(sourceApk).use { source ->
+                    ArscEditor.parse(source.readEntry(source.findEntry(ApkTransformer.RESOURCES)!!))
+                        .packageNameCapacity()
+                }
+            }.getOrElse { error ->
+                return@withContext fail(
+                    PipelineStage.FAILED, 0.22f,
+                    "The resource table could not be read (${error.message ?: "unknown error"})."
+                )
+            }
+            if (config.clonePackageId.length > capacity) {
+                return@withContext fail(
+                    PipelineStage.FAILED, 0.22f,
+                    "This app's resource table only fits $capacity characters for a package name, " +
+                        "but '${config.clonePackageId}' has ${config.clonePackageId.length}."
+                )
+            }
+
+            log("Compatibility verified: standalone package, package name fits ($capacity characters available).")
+
+            // ---------------------------------------------------------------- 3. rewrite
+            val iconPng = sourceApp.iconBitmap?.let { bitmap ->
+                log("Rendering clone icon (badge ${config.badgeNumber ?: "none"}).")
+                BadgeRenderer.render(
+                    original = bitmap,
+                    badgeNumber = config.badgeNumber,
+                    badgeColor = config.badgeColor,
+                    rotationDegrees = config.rotationDegrees,
+                    invertColors = config.invertColors
+                )
+            }
+            if (iconPng == null) {
+                log("[WARN] No launcher icon available, keeping the original artwork.")
+            }
+
+            emit(
+                PipelineStage.PREPARE_PACKAGE, 0.45f,
+                "Rewriting AndroidManifest.xml and resources.arsc"
             )
 
-            Result.success(outputApkFile)
-        } catch (e: Exception) {
-            val errorMsg = e.message ?: "Unknown cloning error occurred."
-            log("[EXCEPTION] $errorMsg")
-            onProgress(
-                PipelineProgress(
-                    stage = PipelineStage.FAILED,
-                    progressFraction = 0f,
-                    detailMessage = "Error: $errorMsg",
-                    logHistory = logs.toList(),
-                    isFailed = true,
-                    errorMessage = errorMsg
-                )
+            val identity = keystore.identity()
+            val unsigned = File(workspace, "clone-unsigned.apk")
+            val report: CloneReport = ApkTransformer.transform(
+                request = CloneRequest(
+                    sourceApk = sourceApk,
+                    outputApk = unsigned,
+                    newPackage = config.clonePackageId,
+                    newLabel = config.cloneName,
+                    iconPng = iconPng
+                ),
+                certificate = identity.certificate,
+                privateKey = identity.privateKey
             )
-            Result.failure(e)
+
+            log("Manifest rewritten: package ${report.originalPackage} -> ${report.newPackage}")
+            log("Resource table re-targeted (${report.entriesWritten} entries copied).")
+            if (report.iconEntriesReplaced.isNotEmpty()) {
+                log("Launcher icon replaced: ${report.iconEntriesReplaced.joinToString()}")
+            }
+            report.warnings.forEach { log("[WARN] $it") }
+            if (report.foreignAuthorities.isNotEmpty()) {
+                log("Foreign provider authorities left untouched: ${report.foreignAuthorities.joinToString()}")
+            }
+
+            // ---------------------------------------------------------------- 4. sign
+            emit(PipelineStage.BUILD_SIGN, 0.68f, "Applying APK Signature Scheme v2")
+            ApkSignatureSchemeV2.signInPlace(unsigned, identity.certificate, identity.privateKey)
+            log("Signed with ${identity.certificate.subjectX500Principal.name} (v1 + v2).")
+            log("Certificate SHA-256: ${identity.fingerprint}")
+
+            // ---------------------------------------------------------------- 5. verify
+            emit(PipelineStage.VERIFY_OUTPUT, 0.88f, "Verifying package identity and signature")
+
+            val signature = ApkSignatureSchemeV2.verify(unsigned)
+            val identityCheck = ApkTransformer.readPackageIdentity(unsigned)
+            val manifestPackage = identityCheck.first
+            val resourcePackage = identityCheck.second
+
+            if (!signature.isValid) {
+                return@withContext fail(
+                    PipelineStage.FAILED, 0.88f,
+                    "Signature verification failed: ${signature.detail}"
+                )
+            }
+            if (manifestPackage != config.clonePackageId || resourcePackage != config.clonePackageId) {
+                return@withContext fail(
+                    PipelineStage.FAILED, 0.88f,
+                    "Package identity mismatch: manifest=$manifestPackage, resource table=$resourcePackage."
+                )
+            }
+
+            val outputDirectory = File(context.filesDir, "clones").apply { mkdirs() }
+            val sanitized = config.cloneName.replace(Regex("[^A-Za-z0-9._-]"), "_").take(48)
+            val outputFile = File(outputDirectory, "${sanitized}-${System.currentTimeMillis()}.apk")
+            unsigned.copyTo(outputFile, overwrite = true)
+            unsigned.delete()
+
+            val outcome = CloneOutcome(
+                apkFile = outputFile,
+                report = report,
+                signature = signature,
+                manifestPackage = manifestPackage,
+                resourcePackage = resourcePackage,
+                certificateFingerprint = identity.fingerprint,
+                durationMillis = System.currentTimeMillis() - startedAt
+            )
+
+            log("Verified: v2 signature ${signature.detail}.")
+            log("Output: ${outputFile.name} (${outputFile.length() / 1024} KB)")
+
+            emit(
+                PipelineStage.COMPLETED, 1f,
+                "Clone ready for installation", complete = true, outcome = outcome
+            )
+            Result.success(outcome)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            val message = error.message ?: "Unknown cloning error"
+            log("[EXCEPTION] $message")
+            emit(PipelineStage.FAILED, 0f, message, failed = true, error = message)
+            Result.failure(error)
         } finally {
-            // Clean up temporary workspace
-            cacheWorkspace.deleteRecursively()
+            workspace.deleteRecursively()
         }
     }
 
-    private fun transformSourceApk(sourceApk: File, destinationApk: File, config: CloneConfig) {
-        ZipOutputStream(FileOutputStream(destinationApk)).use { zos ->
-            ZipInputStream(FileInputStream(sourceApk)).use { zis ->
-                var entry = zis.nextEntry
-                while (entry != null) {
-                    val name = entry.name
-                    // Skip old signature files so we can sign cleanly
-                    if (!name.startsWith("META-INF/")) {
-                        zos.putNextEntry(ZipEntry(name))
-                        val content = zis.readBytes()
-                        zos.write(content)
-                        zos.closeEntry()
-                    }
-                    entry = zis.nextEntry
-                }
-            }
-        }
-    }
-
-    private fun buildDemoApk(context: Context, destinationApk: File, config: CloneConfig) {
-        // Build a genuine, valid standalone demo APK that packages a fully compliant APK structure
-        // If current app's own base.apk is available, use it as a base template
-        val ownApk = File(context.applicationInfo.sourceDir)
-        if (ownApk.exists()) {
-            transformSourceApk(ownApk, destinationApk, config)
-            return
-        }
-
-        // Fallback: assemble standard zip archive
-        ZipOutputStream(FileOutputStream(destinationApk)).use { zos ->
-            zos.putNextEntry(ZipEntry("assets/clone_manifest.json"))
-            val manifestJson = """
-                {
-                    "appName": "${config.cloneName}",
-                    "packageId": "${config.clonePackageId}",
-                    "sourcePackage": "${config.sourcePackage}",
-                    "buildDate": "${Date()}"
-                }
-            """.trimIndent()
-            zos.write(manifestJson.toByteArray(StandardCharsets.UTF_8))
-            zos.closeEntry()
-        }
-    }
-
-    fun applyBadgeToIcon(
-        originalBitmap: Bitmap,
-        badgeNumber: Int?,
-        badgeColor: Long,
-        rotationDegrees: Float,
-        invertColors: Boolean
-    ): Bitmap {
-        val width = originalBitmap.width.coerceAtLeast(120)
-        val height = originalBitmap.height.coerceAtLeast(120)
-        val result = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(result)
-
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-
-        if (invertColors) {
-            val colorMatrix = android.graphics.ColorMatrix(
-                floatArrayOf(
-                    -1f, 0f, 0f, 0f, 255f,
-                    0f, -1f, 0f, 0f, 255f,
-                    0f, 0f, -1f, 0f, 255f,
-                    0f, 0f, 0f, 1f, 0f
-                )
-            )
-            paint.colorFilter = android.graphics.ColorMatrixColorFilter(colorMatrix)
-        }
-
-        canvas.save()
-        if (rotationDegrees != 0f) {
-            canvas.rotate(rotationDegrees, width / 2f, height / 2f)
-        }
-        canvas.drawBitmap(originalBitmap, 0f, 0f, paint)
-        canvas.restore()
-
-        // Draw Badge overlay
-        if (badgeNumber != null) {
-            val badgeRadius = (width * 0.22f).coerceAtLeast(24f)
-            val badgeX = width - badgeRadius - 4f
-            val badgeY = badgeRadius + 4f
-
-            val badgePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = badgeColor.toInt()
-                style = Paint.Style.FILL
-            }
-            canvas.drawCircle(badgeX, badgeY, badgeRadius, badgePaint)
-
-            val badgeBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = Color.WHITE
-                style = Paint.Style.STROKE
-                strokeWidth = 3f
-            }
-            canvas.drawCircle(badgeX, badgeY, badgeRadius, badgeBorderPaint)
-
-            val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = Color.WHITE
-                textSize = badgeRadius * 1.25f
-                textAlign = Paint.Align.CENTER
-                isFakeBoldText = true
-            }
-            val textY = badgeY - ((textPaint.descent() + textPaint.ascent()) / 2f)
-            canvas.drawText(badgeNumber.toString(), badgeX, textY, textPaint)
-        }
-
-        return result
+    private companion object {
+        /** The writer emits 32 bit zip fields, so anything close to the 4 GiB limit is refused up front. */
+        const val MAX_SUPPORTED_BYTES = 3_500_000_000L
     }
 }

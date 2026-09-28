@@ -116,28 +116,7 @@ class PackageInspector(private val context: Context) {
                 }
             }
 
-            // Also create a guaranteed cloneable demo sample app if list is sparse (e.g. in test/emulator)
-            if (apps.none { it.packageName == "com.aistudio.demo.counter" }) {
-                apps.add(
-                    0,
-                    InstalledApp(
-                        packageName = "com.aistudio.demo.counter",
-                        label = "Tally Counter (Demo App)",
-                        versionName = "1.0.0",
-                        versionCode = 1L,
-                        isSystemApp = false,
-                        sourceDir = "internal_bundled",
-                        splitSourceDirs = emptyList(),
-                        isSplitApk = false,
-                        targetSdkVersion = 34,
-                        apkSizeBytes = 450_000L,
-                        isCloneable = true,
-                        compatibilityReason = "Standalone Monolithic APK (Verified Supported)",
-                        clonedCount = 0,
-                        iconBitmap = null
-                    )
-                )
-            }
+            // Only applications that are really installed are listed; there is no simulated sample app.
 
             apps.sortedBy { it.label.lowercase() }
         }

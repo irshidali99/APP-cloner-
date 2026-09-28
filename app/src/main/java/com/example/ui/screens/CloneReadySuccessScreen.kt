@@ -205,6 +205,39 @@ fun CloneReadySuccessScreen(
                                     style = MaterialTheme.typography.bodySmall
                                 )
                             }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Signature:", style = MaterialTheme.typography.bodySmall)
+                                val schemes = lastClone?.signatureScheme.orEmpty()
+                                val verified = lastClone?.isVerified == true
+                                Text(
+                                    text = when {
+                                        verified && schemes.isNotEmpty() -> "$schemes verified"
+                                        verified -> "verified"
+                                        else -> "not verified"
+                                    },
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (verified) Color(0xFF059669) else Color(0xFFB45309)
+                                )
+                            }
+                            val fingerprint = lastClone?.certificateFingerprint.orEmpty()
+                            if (fingerprint.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("Certificate:", style = MaterialTheme.typography.bodySmall)
+                                    Text(
+                                        text = fingerprint.take(17) + "...",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                            }
                         }
                     }
                 }

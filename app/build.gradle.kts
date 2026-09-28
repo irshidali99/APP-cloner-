@@ -1,12 +1,42 @@
-import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
-
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
   alias(libs.plugins.google.devtools.ksp)
-  alias(libs.plugins.secrets)
-  alias(libs.plugins.google.services)
 }
+
+/**
+ * Release signing material is never stored in this repository.
+ *
+ * Provide it either through environment variables (CI) or through a `keystore.properties` file in the
+ * project root, which is git-ignored:
+ *
+ * ```
+ * storeFile=/absolute/path/to/upload.jks
+ * storePassword=...
+ * keyAlias=...
+ * keyPassword=...
+ * ```
+ *
+ * Without it the release build simply produces an unsigned APK instead of silently trying to use a
+ * keystore that used to be committed by accident.
+ */
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = java.util.Properties().apply {
+  if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.inputStream().use { load(it) }
+  }
+}
+
+fun signingValue(propertyName: String, environmentName: String): String? =
+  keystoreProperties.getProperty(propertyName) ?: System.getenv(environmentName)
+
+val releaseStoreFile = signingValue("storeFile", "KEYSTORE_PATH")
+val releaseStorePassword = signingValue("storePassword", "STORE_PASSWORD")
+val releaseKeyAlias = signingValue("keyAlias", "KEY_ALIAS")
+val releaseKeyPassword = signingValue("keyPassword", "KEY_PASSWORD")
+
+val hasReleaseSigning = releaseStoreFile != null && releaseStorePassword != null &&
+  releaseKeyAlias != null && releaseKeyPassword != null && rootProject.file(releaseStoreFile).exists()
 
 android {
   namespace = "com.example"
@@ -23,18 +53,13 @@ android {
   }
 
   signingConfigs {
-    create("release") {
-      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
-      storeFile = file(keystorePath)
-      storePassword = System.getenv("STORE_PASSWORD")
-      keyAlias = "upload"
-      keyPassword = System.getenv("KEY_PASSWORD")
-    }
-    create("debugConfig") {
-      storeFile = file("${rootDir}/debug.keystore")
-      storePassword = "android"
-      keyAlias = "androiddebugkey"
-      keyPassword = "android"
+    if (hasReleaseSigning) {
+      create("release") {
+        storeFile = rootProject.file(releaseStoreFile!!)
+        storePassword = releaseStorePassword
+        keyAlias = releaseKeyAlias
+        keyPassword = releaseKeyPassword
+      }
     }
   }
 
@@ -43,9 +68,14 @@ android {
       isCrunchPngs = false
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      signingConfig = signingConfigs.getByName("release")
+      if (hasReleaseSigning) {
+        signingConfig = signingConfigs.getByName("release")
+      }
     }
-    debug { signingConfig = signingConfigs.getByName("debugConfig") }
+    debug {
+      // Debug builds use AGP's own debug keystore; nothing has to be committed for them to work.
+      applicationIdSuffix = ".debug"
+    }
   }
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11
@@ -62,27 +92,9 @@ android {
   }
 }
 
-// Configure the Secrets Gradle Plugin to use .env and .env.example files
-// to match the convention used in Web projects.
-secrets {
-  propertiesFileName = ".env"
-  defaultPropertiesFileName = ".env.example"
-  ignoreList.add("FIREBASE_APPCHECK_DEBUG_TOKEN")
-}
-
-googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }
-
-// Some unused dependencies are commented out below instead of being removed.
-// This makes it easy to add them back in the future if needed.
 dependencies {
   implementation(platform(libs.androidx.compose.bom))
-  implementation(platform(libs.firebase.bom))
-  // implementation(libs.accompanist.permissions)
   implementation(libs.androidx.activity.compose)
-  // implementation(libs.androidx.camera.camera2)
-  // implementation(libs.androidx.camera.core)
-  // implementation(libs.androidx.camera.lifecycle)
-  // implementation(libs.androidx.camera.view)
   implementation(libs.androidx.compose.material.icons.core)
   implementation(libs.androidx.compose.material.icons.extended)
   implementation(libs.androidx.compose.material3)
@@ -97,40 +109,23 @@ dependencies {
   implementation(libs.androidx.navigation.compose)
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.room.runtime)
-  implementation(libs.coil.compose)
-  implementation(libs.converter.moshi)
-  implementation(libs.firebase.ai)
-  // Uncomment to use Firestore:
-  // implementation(libs.firebase.firestore)
-
-  // Uncomment ALL FOUR of the following dependencies together to use Firebase Auth and Google
-  // Sign-In via Credential Manager:
-  // implementation(libs.firebase.auth)
-  // implementation(libs.androidx.credentials)
-  // implementation(libs.androidx.credentials.play.services)
-  // implementation(libs.googleid)
-  implementation(libs.firebase.appcheck.recaptcha)
-  implementation(libs.firebase.appcheck.debug)
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
-  implementation(libs.logging.interceptor)
-  implementation(libs.moshi.kotlin)
-  implementation(libs.okhttp)
-  // implementation(libs.play.services.location)
-  implementation(libs.retrofit)
-  testImplementation(libs.androidx.compose.ui.test.junit4)
+
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)
   testImplementation(libs.junit)
   testImplementation(libs.kotlinx.coroutines.test)
   testImplementation(libs.robolectric)
+
   androidTestImplementation(platform(libs.androidx.compose.bom))
   androidTestImplementation(libs.androidx.compose.ui.test.junit4)
   androidTestImplementation(libs.androidx.espresso.core)
   androidTestImplementation(libs.androidx.junit)
   androidTestImplementation(libs.androidx.runner)
+
   debugImplementation(libs.androidx.compose.ui.test.manifest)
   debugImplementation(libs.androidx.compose.ui.tooling)
+
   "ksp"(libs.androidx.room.compiler)
-  "ksp"(libs.moshi.kotlin.codegen)
 }

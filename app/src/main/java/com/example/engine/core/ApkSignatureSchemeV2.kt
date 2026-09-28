@@ -49,7 +49,9 @@ object ApkSignatureSchemeV2 {
         val schemeVersion: Int,
         val signerCount: Int,
         val certificateSubject: String?,
-        val detail: String
+        val detail: String,
+        /** Signature schemes actually present in the file, e.g. `[v1, v2]`. */
+        val schemes: List<String> = emptyList()
     )
 
     // ---------------------------------------------------------------------------------------------
@@ -128,8 +130,23 @@ object ApkSignatureSchemeV2 {
     // Verification
     // ---------------------------------------------------------------------------------------------
 
-    /** Verifies the v2 signature of [file]. */
+    /**
+     * Verifies [file]: the v2 signature plus, when present, the JAR v1 signature.
+     *
+     * The result lists every scheme found, so callers can report what the APK really carries instead of
+     * claiming a fixed set.
+     */
     fun verify(file: File): VerificationResult {
+        val hasV1 = hasV1Signature(file)
+        val result = verifyV2(file)
+        val schemes = buildList {
+            if (hasV1) add("v1")
+            if (result.schemeVersion == 2) add("v2")
+        }
+        return result.copy(schemes = schemes)
+    }
+
+    private fun verifyV2(file: File): VerificationResult {
         val archive = ZipArchive(file)
         try {
             val blockStart = archive.signingBlockOffset()

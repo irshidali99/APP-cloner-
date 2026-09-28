@@ -40,6 +40,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val cloneApkBuilder = app.cloneApkBuilder
     val installerManager = app.installerManager
 
+    /** "v1+v2" style description of what the generated APK actually carries. */
+    private fun signatureSchemeOf(outcome: com.example.engine.CloneOutcome): String =
+        outcome.signature.schemes.joinToString("+")
+
     private val _rawInstalledApps = MutableStateFlow<List<InstalledApp>>(emptyList())
     val rawInstalledApps = _rawInstalledApps.asStateFlow()
 
@@ -213,7 +217,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _cloningProgress.value = progress
             }
 
-            result.onSuccess { apkFile ->
+            result.onSuccess { outcome ->
+                val apkFile = outcome.apkFile
                 val newRecord = CloneRecord(
                     cloneName = config.cloneName,
                     clonePackageId = config.clonePackageId,
@@ -226,14 +231,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     badgeNumber = config.badgeNumber,
                     badgeColor = config.badgeColor,
                     rotationDegrees = config.rotationDegrees,
-                    invertColors = config.invertColors
+                    invertColors = config.invertColors,
+                    isVerified = outcome.isVerified,
+                    signatureScheme = signatureSchemeOf(outcome),
+                    certificateFingerprint = outcome.certificateFingerprint
                 )
                 val id = cloneRepository.saveClone(newRecord)
                 val savedRecord = newRecord.copy(id = id)
                 _lastGeneratedCloneRecord.value = savedRecord
                 refreshStorageUsage()
-            }.onFailure { error ->
-                // Progress is already updated to FAILED in builder
+            }.onFailure {
+                // The pipeline already reported the failure through the progress state.
             }
         }
     }

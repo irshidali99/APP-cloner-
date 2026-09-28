@@ -78,8 +78,7 @@ object ApkTransformer {
     fun transform(
         request: CloneRequest,
         certificate: java.security.cert.X509Certificate,
-        privateKey: java.security.PrivateKey,
-        sectionDigestMode: JarV1Signer.SectionDigestMode = JarV1Signer.SectionDigestMode.WITHOUT_TRAILING_BLANK_LINE
+        privateKey: java.security.PrivateKey
     ): CloneReport {
         val warnings = ArrayList<String>()
         val archive = ZipArchive(request.sourceApk)
@@ -189,7 +188,7 @@ object ApkTransformer {
             }
 
             // ---- v1 signature --------------------------------------------------------------------
-            val signer = JarV1Signer(certificate, privateKey, sectionDigestMode = sectionDigestMode)
+            val signer = JarV1Signer(certificate, privateKey)
             val signed = signer.sign(entryDigests, excluded = emptySet())
             for ((name, bytes) in signed.files) {
                 writer.writeStoredEntry(name, bytes, alignment = 4)

@@ -20,20 +20,8 @@ import java.util.Base64
 class JarV1Signer(
     private val certificate: X509Certificate,
     private val privateKey: PrivateKey,
-    private val signatureBlockName: String = "CERT",
-    /** How the per-entry digest in CERT.SF is derived from the MANIFEST.MF section. */
-    val sectionDigestMode: SectionDigestMode = SectionDigestMode.WITHOUT_TRAILING_BLANK_LINE
+    private val signatureBlockName: String = "CERT"
 ) {
-    /**
-     * Determines how the per-entry `SHA-256-Digest` in `CERT.SF` is derived from the corresponding
-     * `MANIFEST.MF` section. Verified empirically against `java.util.jar` (the same verifier Android uses
-     * for v1 signatures).
-     */
-    enum class SectionDigestMode {
-        WITHOUT_TRAILING_BLANK_LINE,
-        WITH_TRAILING_BLANK_LINE,
-        MANIFEST_DIGEST_ONLY
-    }
 
     /** Result of signing: the three `META-INF` blobs keyed by their entry name. */
     data class SignedFiles(val files: Map<String, ByteArray>) {
@@ -74,21 +62,16 @@ class JarV1Signer(
         appendLine(sf, "SHA-256-Digest-Manifest", base64(digest.digest(manifestBytes)))
         sf.append("\r\n")
 
-        if (sectionDigestMode != SectionDigestMode.MANIFEST_DIGEST_ONLY) {
-            for ((name, sectionBytes) in sections) {
-                digest.reset()
-                val digestInput = when (sectionDigestMode) {
-                    SectionDigestMode.WITH_TRAILING_BLANK_LINE ->
-                        sectionBytes + "\r\n".toByteArray(Charsets.UTF_8)
-                    else -> sectionBytes
-                }
-                val sectionDigest = digest.digest(digestInput)
-                val section = StringBuilder()
-                appendLine(section, "Name", name)
-                appendLine(section, "SHA-256-Digest", base64(sectionDigest))
-                sf.append(section)
-                sf.append("\r\n")
-            }
+        // The per entry digest is taken over the manifest section itself, without the blank line that
+        // separates sections - verified against java.util.jar (the verifier Android uses for v1).
+        for ((name, sectionBytes) in sections) {
+            digest.reset()
+            val sectionDigest = digest.digest(sectionBytes)
+            val section = StringBuilder()
+            appendLine(section, "Name", name)
+            appendLine(section, "SHA-256-Digest", base64(sectionDigest))
+            sf.append(section)
+            sf.append("\r\n")
         }
         val sfBytes = sf.toString().toByteArray(Charsets.UTF_8)
 

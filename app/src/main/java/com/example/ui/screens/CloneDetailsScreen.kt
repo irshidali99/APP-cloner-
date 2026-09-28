@@ -183,6 +183,15 @@ fun CloneDetailsScreen(
                                 )
                             }
                         }
+                        if (record.isVerified) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            StatusBadge(
+                                text = "Signature verified" +
+                                    if (record.signatureScheme.isNotEmpty()) " (${record.signatureScheme})" else "",
+                                textColor = Color(0xFF059669),
+                                backgroundColor = Color(0xFFECFDF5)
+                            )
+                        }
                     }
                 }
             }

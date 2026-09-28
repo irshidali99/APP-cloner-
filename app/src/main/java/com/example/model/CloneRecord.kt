@@ -22,7 +22,13 @@ data class CloneRecord(
     val badgeNumber: Int? = null,
     val badgeColor: Long = 0xFF4F46E5L,
     val rotationDegrees: Float = 0f,
-    val invertColors: Boolean = false
+    val invertColors: Boolean = false,
+    /** True when the generated APK's signature and package identity were verified after signing. */
+    val isVerified: Boolean = false,
+    /** Signature schemes found in the generated APK, e.g. "v1+v2". */
+    val signatureScheme: String = "",
+    /** SHA-256 fingerprint of the certificate that signed this clone. */
+    val certificateFingerprint: String = ""
 ) {
     val isInstalled: Boolean
         get() = installStatus == STATUS_INSTALLED
