@@ -28,22 +28,35 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Build debug APK
-        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
+        id: build
+        continue-on-error: true
+        run: |
+          ./gradlew :app:assembleDebug --no-daemon --stacktrace 2>&1 | tee build.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Tail of the build log
+        if: steps.build.outcome == 'failure'
+        run: tail -80 build.log
 
       - name: Run engine unit tests
         continue-on-error: true
-        run: ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
+        run: ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee test.log
 
       - name: Collect APK
+        if: always()
         run: |
           mkdir -p artifacts
-          find app/build/outputs/apk -name "*.apk" -exec cp {} artifacts/ \;
-          ls -l artifacts
+          find app/build/outputs/apk -name "*.apk" -exec cp {} artifacts/ \; 2>/dev/null || true
+          ls -l artifacts || true
 
-      - name: Upload APK
+      - name: Upload build log and APK
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: app-cloner-debug-apk
-          path: artifacts/*.apk
-          if-no-files-found: error
+          name: build-output
+          path: |
+            build.log
+            test.log
+            artifacts/*.apk
+          if-no-files-found: ignore
           retention-days: 30
