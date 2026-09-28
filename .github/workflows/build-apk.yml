@@ -56,14 +56,17 @@ jobs:
         run: |
           BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           APK=$(ls artifacts/*.apk | head -1)
+          echo "build-tools: $BUILD_TOOLS" | tee verify.txt
+          ls "$BUILD_TOOLS/apksigner" >> verify.txt 2>&1 || echo "apksigner missing" >> verify.txt
           {
-            echo "APK verification";
-            "$BUILD_TOOLS/apksigner" verify --print-certs "$APK" 2>&1 | grep -E "Verified using|Signer #1 certificate DN" | head -5;
+            echo "--- apksigner verify --verbose --print-certs ---";
+            "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" 2>&1 | head -20;
+            echo "--- zipalign -c -v 4 ---";
             "$BUILD_TOOLS/zipalign" -c -v 4 "$APK" >/dev/null 2>&1 && echo "zipalign 4: OK" || echo "zipalign 4: FAILED";
-            "$BUILD_TOOLS/aapt" dump badging "$APK" 2>/dev/null | grep -E "^package|^launchable-activity" | head -3;
-          } > verify.txt
-          cat verify.txt
-          echo "::notice title=APK verification::$(tr '\n' '~' < verify.txt)"
+            echo "--- aapt dump badging ---";
+            "$BUILD_TOOLS/aapt" dump badging "$APK" 2>/dev/null | grep -E "^package|^launchable-activity|^sdkVersion|^targetSdkVersion|uses-permission: name='android.permission.REQUEST_INSTALL_PACKAGES'" | head -6;
+          } | tee -a verify.txt
+          echo "::notice title=APK verification::$(grep -E 'verifies|Verified using|zipalign|^package|launchable|sdkVersion|REQUEST_INSTALL' verify.txt | head -12 | tr '\n' '~')"
 
       - name: Publish the APK as a release asset
         id: release
@@ -71,7 +74,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="test-apk-${GITHUB_RUN_NUMBER}"
+          TAG="test-apk-latest"
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
           gh release create "$TAG" artifacts/*.apk \
             --title "Test APK build ${GITHUB_RUN_NUMBER}" \
             --notes "Debug APK built from ${GITHUB_SHA} by GitHub Actions, for on-device testing." \
