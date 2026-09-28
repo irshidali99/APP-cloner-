@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -34,9 +34,11 @@ jobs:
           ./gradlew :app:assembleDebug --no-daemon --stacktrace 2>&1 | tee build.log
           exit ${PIPESTATUS[0]}
 
-      - name: Tail of the build log
+      - name: Report build errors as annotations
         if: steps.build.outcome == 'failure'
-        run: tail -80 build.log
+        run: |
+          echo "::error title=Gradle build failed::$(grep -E '^e: |FAILURE:|What went wrong|Caused by|error:|Execution failed|> ' build.log | head -25 | tr '\n' '~')"
+          tail -40 build.log
 
       - name: Run engine unit tests
         continue-on-error: true
@@ -48,6 +50,20 @@ jobs:
           mkdir -p artifacts
           find app/build/outputs/apk -name "*.apk" -exec cp {} artifacts/ \; 2>/dev/null || true
           ls -l artifacts || true
+
+      - name: Publish the APK as a release asset
+        id: release
+        if: steps.build.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="test-apk-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" artifacts/*.apk \
+            --title "Test APK build ${GITHUB_RUN_NUMBER}" \
+            --notes "Debug APK built from ${GITHUB_SHA} by GitHub Actions, for on-device testing." \
+            --target "${GITHUB_SHA}"
+          echo "published=$TAG" >> "$GITHUB_OUTPUT"
+          gh release view "$TAG" --json assets --jq '.assets[].url'
 
       - name: Upload build log and APK
         if: always()
