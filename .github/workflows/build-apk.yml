@@ -57,6 +57,20 @@ jobs:
             grep -E "tests completed|FAILED" test.log | head -25
           fi
 
+      - name: Check that Room and the engine made it into the APK
+        if: steps.build.outcome == 'success'
+        run: |
+          APK=$(ls artifacts/*.apk 2>/dev/null | head -1)
+          if [ -z "$APK" ]; then APK=$(ls app/build/outputs/apk/debug/*.apk | head -1); fi
+          {
+            echo "--- generated Room classes in the APK ---";
+            unzip -l "$APK" | grep -E "AppDatabase_Impl|CloneRecordDao_Impl" || echo "ROOM IMPL MISSING";
+            echo "--- engine classes in the APK ---";
+            unzip -l "$APK" | grep -cE "classes.*dex" | sed 's/^/dex files: /';
+            unzip -p "$APK" classes.dex | strings | grep -cE "ApkSignatureSchemeV2|CarscEditor" | sed 's/^/engine references: /';
+          } | tee -a verify.txt
+          echo "::notice title=APK contents::$(grep -E 'Room|room|AppDatabase_Impl|CloneRecordDao_Impl|dex files|engine references|MISSING' verify.txt | head -8 | tr '\n' '~')"
+
       - name: Collect APK
         if: always()
         run: |
