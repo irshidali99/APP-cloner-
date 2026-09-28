@@ -1,0 +1,500 @@
+package com.example.ui.screens
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ColorLens
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.RotateRight
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.model.CloneConfig
+import com.example.model.InstalledApp
+import com.example.ui.MainViewModel
+import com.example.ui.components.AppIconView
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CloneSetupScreen(
+    viewModel: MainViewModel,
+    installedApp: InstalledApp,
+    onBackClick: () -> Unit,
+    onStartCloning: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val cloneName by viewModel.cloneDisplayName.collectAsStateWithLifecycle()
+    val packageId by viewModel.clonePackageId.collectAsStateWithLifecycle()
+    val badgeNum by viewModel.badgeNumber.collectAsStateWithLifecycle()
+    val badgeColorValue by viewModel.badgeColor.collectAsStateWithLifecycle()
+    val rotation by viewModel.rotationDegrees.collectAsStateWithLifecycle()
+    val invert by viewModel.invertColors.collectAsStateWithLifecycle()
+
+    val validationResult by remember(cloneName, packageId, installedApp) {
+        derivedStateOf {
+            val config = CloneConfig(
+                sourcePackage = installedApp.packageName,
+                sourceAppName = installedApp.label,
+                cloneName = cloneName,
+                clonePackageId = packageId,
+                badgeNumber = badgeNum,
+                badgeColor = badgeColorValue,
+                rotationDegrees = rotation,
+                invertColors = invert
+            )
+            config.validate()
+        }
+    }
+
+    val paletteColors = remember {
+        listOf(
+            0xFF4F46E5L to "Indigo",
+            0xFF0EA5E9L to "Cyan",
+            0xFF10B981L to "Emerald",
+            0xFFF59E0BL to "Amber",
+            0xFFEF4444L to "Rose",
+            0xFF8B5CF6L to "Violet",
+            0xFF64748BL to "Slate"
+        )
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        text = "Clone Setup",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                navigationIcon = {
+                    IconButton(
+                        onClick = onBackClick,
+                        modifier = Modifier.testTag("back_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Navigate back"
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            )
+        },
+        bottomBar = {
+            Surface(
+                tonalElevation = 3.dp,
+                shadowElevation = 8.dp,
+                color = MaterialTheme.colorScheme.surface
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            viewModel.startCloning(onStartCloning)
+                        },
+                        enabled = validationResult.isValid,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp)
+                            .testTag("start_cloning_button")
+                    ) {
+                        Text(
+                            text = "Start Cloning Process",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        },
+        modifier = modifier
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp)
+        ) {
+            // Source App Card
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AppIconView(
+                        bitmap = installedApp.iconBitmap,
+                        contentDescription = installedApp.label,
+                        modifier = Modifier.size(56.dp)
+                    )
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    Column {
+                        Text(
+                            text = installedApp.label,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = installedApp.packageName,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Security,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Original app remains untouched",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Icon Customization Section
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Text(
+                        text = "Icon Customization",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Customize the launcher icon to distinguish this clone",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Live Icon Preview
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        AppIconView(
+                            bitmap = installedApp.iconBitmap,
+                            contentDescription = "Clone Preview",
+                            badgeNumber = badgeNum,
+                            badgeColor = Color(badgeColorValue),
+                            rotationDegrees = rotation,
+                            invertColors = invert,
+                            modifier = Modifier.size(72.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Badge Number Selection
+                    Text(
+                        text = "Badge Number",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = badgeNum == null,
+                            onClick = { viewModel.badgeNumber.value = null },
+                            label = { Text("None") },
+                            modifier = Modifier.testTag("badge_chip_none")
+                        )
+                        (1..9).forEach { num ->
+                            FilterChip(
+                                selected = badgeNum == num,
+                                onClick = { viewModel.badgeNumber.value = num },
+                                label = { Text(num.toString()) },
+                                modifier = Modifier.testTag("badge_chip_$num")
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Badge Color Palette
+                    Text(
+                        text = "Badge Color",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        paletteColors.forEach { (colorHex, name) ->
+                            val isSelected = badgeColorValue == colorHex
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(colorHex))
+                                    .border(
+                                        width = if (isSelected) 3.dp else 1.dp,
+                                        color = if (isSelected) MaterialTheme.colorScheme.onSurface else Color.Transparent,
+                                        shape = CircleShape
+                                    )
+                                    .clickable { viewModel.badgeColor.value = colorHex }
+                                    .testTag("color_picker_$name")
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Icon Rotation
+                    Text(
+                        text = "Icon Rotation",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(0f to "0°", 90f to "90°", 180f to "180°", 270f to "270°").forEach { (deg, label) ->
+                            FilterChip(
+                                selected = rotation == deg,
+                                onClick = { viewModel.rotationDegrees.value = deg },
+                                label = { Text(label) },
+                                modifier = Modifier.testTag("rotation_chip_$label")
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Invert Colors Toggle
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Invert Icon Colors",
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 14.sp
+                            )
+                            Text(
+                                text = "High contrast negative effect for quick recognition",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = invert,
+                            onCheckedChange = { viewModel.invertColors.value = it },
+                            modifier = Modifier.testTag("invert_colors_switch")
+                        )
+                    }
+                }
+            }
+
+            // Naming and Package ID Section
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Text(
+                        text = "Clone Identity",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Clone Name
+                    OutlinedTextField(
+                        value = cloneName,
+                        onValueChange = { viewModel.cloneDisplayName.value = it },
+                        label = { Text("Clone Display Name") },
+                        supportingText = { Text("${cloneName.length}/50 characters") },
+                        isError = cloneName.isBlank(),
+                        singleLine = true,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("clone_name_input")
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Clone Package ID
+                    OutlinedTextField(
+                        value = packageId,
+                        onValueChange = { viewModel.clonePackageId.value = it },
+                        label = { Text("Unique Package ID") },
+                        supportingText = {
+                            if (!validationResult.isValid && validationResult.error != null) {
+                                Text(
+                                    text = validationResult.error!!,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            } else {
+                                Text("Independent identifier required by Android package manager")
+                            }
+                        },
+                        isError = !validationResult.isValid,
+                        singleLine = true,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("clone_package_id_input")
+                    )
+                }
+            }
+
+            // Legal & Security Disclaimer Card
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                ),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Security & Data Notice",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "• Isolated Storage: Android's sandbox model prevents cloning private app data, passwords, or credentials. The clone will launch in a clean, isolated state.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "• Self-Signed Key: The clone is cryptographically signed with a secure local key. Google Play services or developer-verified DRM checks may not function inside the clone.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}

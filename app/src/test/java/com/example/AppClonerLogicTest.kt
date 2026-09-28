@@ -1,0 +1,165 @@
+package com.example
+
+import com.example.model.CloneConfig
+import com.example.model.CloneRecord
+import com.example.model.CompatibilityReport
+import com.example.model.InstalledApp
+import com.example.model.PipelineProgress
+import com.example.model.PipelineStage
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class AppClonerLogicTest {
+
+    @Test
+    fun testValidCloneConfigValidation() {
+        val validConfig = CloneConfig(
+            sourcePackage = "com.sample.calculator",
+            sourceAppName = "Calculator",
+            cloneName = "Calculator 2",
+            clonePackageId = "com.sample.calculator.clone1"
+        )
+        val result = validConfig.validate()
+        assertTrue(result.isValid)
+        assertEquals(null, result.error)
+    }
+
+    @Test
+    fun testEmptyNameValidationFails() {
+        val invalidConfig = CloneConfig(
+            sourcePackage = "com.sample.calculator",
+            sourceAppName = "Calculator",
+            cloneName = "   ",
+            clonePackageId = "com.sample.calculator.clone1"
+        )
+        val result = invalidConfig.validate()
+        assertFalse(result.isValid)
+        assertNotNull(result.error)
+    }
+
+    @Test
+    fun testSamePackageIdValidationFails() {
+        val invalidConfig = CloneConfig(
+            sourcePackage = "com.sample.calculator",
+            sourceAppName = "Calculator",
+            cloneName = "Calculator Clone",
+            clonePackageId = "com.sample.calculator"
+        )
+        val result = invalidConfig.validate()
+        assertFalse(result.isValid)
+        assertTrue(result.error?.contains("cannot be identical") == true)
+    }
+
+    @Test
+    fun testInvalidPackageIdFormatFails() {
+        val invalidConfig = CloneConfig(
+            sourcePackage = "com.sample.calculator",
+            sourceAppName = "Calculator",
+            cloneName = "Calculator Clone",
+            clonePackageId = "invalid_single_word"
+        )
+        val result = invalidConfig.validate()
+        assertFalse(result.isValid)
+        assertTrue(result.error?.contains("dot-separated") == true)
+    }
+
+    @Test
+    fun testDefaultNameAndPackageGeneration() {
+        val generatedNameAuto = CloneConfig.generateDefaultCloneName("Notes", 2, true)
+        assertEquals("Notes (Clone 2)", generatedNameAuto)
+
+        val generatedNameSimple = CloneConfig.generateDefaultCloneName("Notes", 2, false)
+        assertEquals("Notes Clone", generatedNameSimple)
+
+        val generatedPkg = CloneConfig.generateDefaultPackageId("org.example.notes", 1)
+        assertEquals("org.example.notes.clone1", generatedPkg)
+    }
+
+    @Test
+    fun testCompatibilityReportForSystemApp() {
+        val systemApp = InstalledApp(
+            packageName = "com.android.settings",
+            label = "Settings",
+            versionName = "14",
+            versionCode = 34L,
+            isSystemApp = true,
+            sourceDir = "/system/priv-app/Settings.apk"
+        )
+        val report = CompatibilityReport.evaluate(systemApp)
+        assertFalse(report.isSupported)
+        assertTrue(report.systemAppProtected)
+        assertFalse(report.splitApkDetected)
+    }
+
+    @Test
+    fun testCompatibilityReportForSplitApk() {
+        val splitApp = InstalledApp(
+            packageName = "com.popular.streaming",
+            label = "Streaming App",
+            versionName = "5.2.1",
+            versionCode = 5021L,
+            isSystemApp = false,
+            sourceDir = "/data/app/base.apk",
+            splitSourceDirs = listOf("/data/app/split_config.arm64_v8a.apk", "/data/app/split_config.xxhdpi.apk")
+        )
+        val report = CompatibilityReport.evaluate(splitApp)
+        assertFalse(report.isSupported)
+        assertTrue(report.splitApkDetected)
+        assertFalse(report.systemAppProtected)
+        assertTrue(report.signatureRestrictionsNote.contains("Split APKs"))
+    }
+
+    @Test
+    fun testCompatibilityReportForStandaloneApp() {
+        val standaloneApp = InstalledApp(
+            packageName = "com.simplemobiletools.calendar",
+            label = "Simple Calendar",
+            versionName = "1.0",
+            versionCode = 100L,
+            isSystemApp = false,
+            sourceDir = "/data/app/calendar.apk",
+            splitSourceDirs = emptyList()
+        )
+        val report = CompatibilityReport.evaluate(standaloneApp)
+        assertTrue(report.isSupported)
+        assertFalse(report.splitApkDetected)
+        assertFalse(report.systemAppProtected)
+    }
+
+    @Test
+    fun testCloneRecordStatusFlags() {
+        val installedRecord = CloneRecord(
+            cloneName = "Test Clone",
+            clonePackageId = "com.test.clone",
+            sourceAppName = "Test",
+            sourcePackage = "com.test",
+            sourceVersion = "1.0",
+            apkFilePath = "/data/user/0/app/files/clones/test.apk",
+            apkSizeBytes = 2048L,
+            installStatus = CloneRecord.STATUS_INSTALLED
+        )
+        assertTrue(installedRecord.isInstalled)
+
+        val readyRecord = installedRecord.copy(installStatus = CloneRecord.STATUS_APK_READY)
+        assertFalse(readyRecord.isInstalled)
+    }
+
+    @Test
+    fun testPipelineStageProgression() {
+        var progress = PipelineProgress(stage = PipelineStage.INSPECT_SOURCE, progressFraction = 0.2f)
+        assertEquals(PipelineStage.INSPECT_SOURCE, progress.stage)
+        assertFalse(progress.isComplete)
+        assertFalse(progress.isFailed)
+
+        progress = progress.copy(
+            stage = PipelineStage.COMPLETED,
+            progressFraction = 1.0f,
+            isComplete = true
+        )
+        assertTrue(progress.isComplete)
+        assertEquals(1.0f, progress.progressFraction, 0.001f)
+    }
+}
