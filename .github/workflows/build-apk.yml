@@ -41,8 +41,21 @@ jobs:
           tail -40 build.log
 
       - name: Run engine unit tests
+        id: tests
         continue-on-error: true
-        run: ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee test.log
+        run: |
+          ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee test.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Report test results as annotations
+        if: always()
+        run: |
+          if [ "${{ steps.tests.outcome }}" = "success" ]; then
+            echo "::notice title=Unit tests::all engine unit tests passed"
+          else
+            echo "::error title=Unit tests failed::$(grep -E 'FAILED|tests completed|e: |What went wrong|Caused by' test.log | head -20 | tr '\n' '~')"
+            grep -E "tests completed|FAILED" test.log | head -25
+          fi
 
       - name: Collect APK
         if: always()
