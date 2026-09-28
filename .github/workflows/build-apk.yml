@@ -51,6 +51,20 @@ jobs:
           find app/build/outputs/apk -name "*.apk" -exec cp {} artifacts/ \; 2>/dev/null || true
           ls -l artifacts || true
 
+      - name: Verify the APK with the official tools
+        if: steps.build.outcome == 'success'
+        run: |
+          BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          APK=$(ls artifacts/*.apk | head -1)
+          {
+            echo "APK verification";
+            "$BUILD_TOOLS/apksigner" verify --print-certs "$APK" 2>&1 | grep -E "Verified using|Signer #1 certificate DN" | head -5;
+            "$BUILD_TOOLS/zipalign" -c -v 4 "$APK" >/dev/null 2>&1 && echo "zipalign 4: OK" || echo "zipalign 4: FAILED";
+            "$BUILD_TOOLS/aapt" dump badging "$APK" 2>/dev/null | grep -E "^package|^launchable-activity" | head -3;
+          } > verify.txt
+          cat verify.txt
+          echo "::notice title=APK verification::$(tr '\n' '~' < verify.txt)"
+
       - name: Publish the APK as a release asset
         id: release
         if: steps.build.outcome == 'success'
@@ -73,6 +87,7 @@ jobs:
           path: |
             build.log
             test.log
+            verify.txt
             artifacts/*.apk
           if-no-files-found: ignore
           retention-days: 30
