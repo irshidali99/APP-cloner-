@@ -27,18 +27,12 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
-      - name: Prepare a stable test signing key
+      - name: Check the test signing key
         run: |
-          mkdir -p ci
-          if [ ! -f ci/test-signing.jks ]; then
-            echo "creating a test signing key (debug APKs only)"
-            "$JAVA_HOME/bin/keytool" -genkeypair -keystore ci/test-signing.jks -storetype PKCS12 \
-              -alias androiddebugkey -storepass android -keypass android \
-              -keyalg RSA -keysize 2048 -validity 10000 \
-              -dname "CN=Android Debug,O=Android,C=US"
-            echo "created" > ci/.key-created
+          if [ -f ci/test-signing.jks ]; then
+            echo "using the committed test signing key (stable across builds)"
           else
-            echo "reusing the committed test signing key"
+            echo "::warning title=Test signing key missing::APKs will be signed with a random debug key and cannot be installed over each other"
           fi
 
       - name: Build debug APK
@@ -195,19 +189,6 @@ jobs:
             artifacts/*.apk
           if-no-files-found: ignore
           retention-days: 30
-
-      - name: Remember the test signing key
-        if: always()
-        run: |
-          [ -f ci/.key-created ] || { echo "key already tracked"; exit 0; }
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f ci/test-signing.jks
-          git commit -m "ci: keep the test signing key so later builds install over earlier ones [skip ci]" || exit 0
-          for attempt in 1 2 3; do
-            git pull --rebase -q origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && break
-            sleep 5
-          done
 
       # Diagnostics are committed back to the branch so a failing run can be inspected without access to
       # the artifact store.
