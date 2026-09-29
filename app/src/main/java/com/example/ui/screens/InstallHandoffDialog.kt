@@ -44,6 +44,8 @@ fun InstallHandoffDialog(
     var hasPermission by remember {
         mutableStateOf(packageInstallerManager.canRequestPackageInstalls())
     }
+    val parts = remember(apkFile) { packageInstallerManager.partsOf(apkFile) }
+    var installError by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -65,7 +67,12 @@ fun InstallHandoffDialog(
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (hasPermission) {
                     Text(
-                        text = "App Cloner will now hand off the package for $cloneName to the Android System Package Installer.",
+                        text = if (parts.size > 1) {
+                            "App Cloner will install $cloneName as one bundle: the base APK plus " +
+                                "${parts.size - 1} split APK(s), confirmed by Android in a single step."
+                        } else {
+                            "App Cloner will now hand off the package for $cloneName to the Android System Package Installer."
+                        },
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Text(
@@ -78,6 +85,21 @@ fun InstallHandoffDialog(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    if (parts.size > 1) {
+                        Text(
+                            text = "• Split apps must be installed together; Android rejects a base APK " +
+                                "without its configuration splits.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    installError?.let { message ->
+                        Text(
+                            text = "Install could not be started: $message",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                 } else {
                     Text(
                         text = "Android requires explicit permission for App Cloner to install standalone APK packages.",
@@ -95,10 +117,19 @@ fun InstallHandoffDialog(
             if (hasPermission) {
                 Button(
                     onClick = {
-                        onDismiss()
                         if (apkFile.exists()) {
-                            val installIntent = packageInstallerManager.createInstallIntent(apkFile)
-                            context.startActivity(installIntent)
+                            if (parts.size > 1) {
+                                packageInstallerManager.startBundleInstall(parts)
+                                    .onSuccess { onDismiss() }
+                                    .onFailure { error ->
+                                        installError = error.message ?: error::class.java.simpleName
+                                    }
+                            } else {
+                                onDismiss()
+                                context.startActivity(packageInstallerManager.createInstallIntent(apkFile))
+                            }
+                        } else {
+                            installError = "the generated APK is no longer on the device"
                         }
                     },
                     modifier = Modifier.testTag("proceed_install_button")

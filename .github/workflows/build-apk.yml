@@ -54,8 +54,52 @@ jobs:
             echo "::notice title=Unit tests::all engine unit tests passed"
           else
             echo "::error title=Unit tests failed::$(grep -E 'FAILED|tests completed|e: |What went wrong|Caused by' test.log | head -20 | tr '\n' '~')"
-            grep -E "tests completed|FAILED" test.log | head -25
+            grep -E "tests completed|FAILED|expected" test.log | head -25
           fi
+
+      # ------------------------------------------------------------------ real world APK smoke test
+      - name: Download a real APK to clone
+        id: smoke-download
+        continue-on-error: true
+        run: |
+          mkdir -p smoke
+          for url in \
+            https://f-droid.org/F-Droid.apk \
+            https://github.com/irshidali99/APP-cloner-/releases/download/test-apk-latest/app-debug.apk \
+            https://f-droid.org/repo/org.fdroid.fdroid_1020052.apk ; do
+            echo "trying $url"
+            if curl -fsSL --max-time 180 -o smoke/source.apk "$url" && [ -s smoke/source.apk ]; then
+              echo "downloaded $url"; break
+            fi
+          done
+          ls -l smoke || true
+
+      - name: Clone the real APK with the engine
+        id: smoke
+        if: steps.smoke-download.outcome == 'success' && steps.build.outcome == 'success'
+        continue-on-error: true
+        env:
+          CLONE_SMOKE_APK: ${{ github.workspace }}/smoke/source.apk
+          CLONE_SMOKE_OUT_DIR: ${{ github.workspace }}/smoke/output
+        run: |
+          ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace \
+            --tests '*RealApkSmokeTest*' 2>&1 | tee smoke.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Verify the engine's clone of the real app with apksigner
+        if: always()
+        run: |
+          {
+            echo "--- smoke report ---"
+            cat smoke/output/smoke-report.txt 2>/dev/null || echo "no smoke report"
+            BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+            for CLONE in $(ls smoke/output/*.apk 2>/dev/null); do
+              echo "--- apksigner verify: $CLONE ---"
+              "$BUILD_TOOLS/apksigner" verify --print-certs "$CLONE" 2>&1 | head -8
+              "$BUILD_TOOLS/aapt" dump badging "$CLONE" 2>/dev/null | grep -E "^package" | head -2
+            done
+          } | tee -a verify.txt
+          echo "::notice title=Real APK smoke::$(grep -E 'SMOKE|source=|part=|verifies|Verified using|^package|no smoke' verify.txt | tail -10 | tr '\n' '~')"
 
       - name: Check that Room and the engine made it into the APK
         if: steps.build.outcome == 'success'
@@ -73,29 +117,24 @@ jobs:
           } | tee -a verify.txt
           echo "::notice title=APK contents::$(grep -E 'generated files|Impl|: [0-9]+$' verify.txt | tail -8 | tr '\n' '~')"
 
+      - name: Verify the APK with the official tools
+        if: steps.build.outcome == 'success'
+        run: |
+          BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
+          {
+            echo "--- apksigner verify --verbose --print-certs: $APK ---";
+            "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" 2>&1 | head -12;
+            echo "--- zipalign -c -v 4 ---";
+            "$BUILD_TOOLS/zipalign" -c -v 4 "$APK" >/dev/null 2>&1 && echo "zipalign 4: OK" || echo "zipalign 4: FAILED";
+          } | tee -a verify.txt
+
       - name: Collect APK
         if: always()
         run: |
           mkdir -p artifacts
           find app/build/outputs/apk -name "*.apk" -exec cp {} artifacts/ \; 2>/dev/null || true
           ls -l artifacts || true
-
-      - name: Verify the APK with the official tools
-        if: steps.build.outcome == 'success'
-        run: |
-          BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
-          APK=$(ls artifacts/*.apk | head -1)
-          echo "build-tools: $BUILD_TOOLS" | tee verify.txt
-          ls "$BUILD_TOOLS/apksigner" >> verify.txt 2>&1 || echo "apksigner missing" >> verify.txt
-          {
-            echo "--- apksigner verify --verbose --print-certs ---";
-            "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" 2>&1 | head -20;
-            echo "--- zipalign -c -v 4 ---";
-            "$BUILD_TOOLS/zipalign" -c -v 4 "$APK" >/dev/null 2>&1 && echo "zipalign 4: OK" || echo "zipalign 4: FAILED";
-            echo "--- aapt dump badging ---";
-            "$BUILD_TOOLS/aapt" dump badging "$APK" 2>/dev/null | grep -E "^package|^launchable-activity|^sdkVersion|^targetSdkVersion|uses-permission: name='android.permission.REQUEST_INSTALL_PACKAGES'" | head -6;
-          } | tee -a verify.txt
-          echo "::notice title=APK verification::$(grep -E 'verifies|Verified using|zipalign|^package|launchable|sdkVersion|REQUEST_INSTALL' verify.txt | head -12 | tr '\n' '~')"
 
       - name: Publish the APK as a release asset
         id: release
@@ -120,7 +159,39 @@ jobs:
           path: |
             build.log
             test.log
+            smoke.log
             verify.txt
+            smoke/output/**
             artifacts/*.apk
           if-no-files-found: ignore
           retention-days: 30
+
+      # Diagnostics are committed back to the branch so a failing run can be inspected without access to
+      # the artifact store.
+      - name: Commit diagnostics when something failed
+        if: failure() || steps.tests.outcome == 'failure' || steps.smoke.outcome == 'failure'
+        run: |
+          mkdir -p ci-diagnostics
+          {
+            echo "# run ${GITHUB_RUN_NUMBER} (${GITHUB_SHA})"
+            echo "## build outcome: ${{ steps.build.outcome }}"
+            echo "## test outcome: ${{ steps.tests.outcome }}"
+            echo "## smoke outcome: ${{ steps.smoke.outcome }}"
+            echo
+            echo "## verify.txt"
+            cat verify.txt 2>/dev/null | tail -60
+            echo
+            echo "## build.log (tail)"
+            tail -120 build.log 2>/dev/null
+            echo
+            echo "## test.log (failure lines)"
+            grep -E "FAILED|expected|Caused by|tests completed|e: " test.log 2>/dev/null | head -60
+            echo
+            echo "## smoke.log (tail)"
+            tail -120 smoke.log 2>/dev/null
+          } > ci-diagnostics/last-run.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f ci-diagnostics/last-run.txt
+          git commit -m "ci: diagnostics for run ${GITHUB_RUN_NUMBER} [skip ci]" || exit 0
+          git push origin HEAD:${GITHUB_REF_NAME} || true

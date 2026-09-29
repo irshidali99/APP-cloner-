@@ -62,11 +62,11 @@ import com.example.model.InstalledApp
 import com.example.ui.AppFilter
 import com.example.ui.MainViewModel
 import com.example.ui.components.AppIconView
+import com.example.ui.components.BundleBadge
 import com.example.ui.components.CloneableBadge
 import com.example.ui.components.ClonedBadge
 import com.example.ui.components.EmptyStateView
 import com.example.ui.components.SystemAppBadge
-import com.example.ui.components.UnsupportedBadge
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -426,12 +426,12 @@ fun InstalledAppCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    if (app.isCloneable) {
+                    if (app.isCloneable && app.isSplitApk) {
+                        BundleBadge(parts = app.splitSourceDirs.size + 1)
+                    } else if (app.isCloneable) {
                         CloneableBadge()
                     } else if (app.isSystemApp) {
                         SystemAppBadge()
-                    } else if (app.isSplitApk) {
-                        UnsupportedBadge("Split APK (${app.splitSourceDirs.size + 1})")
                     }
 
                     if (app.clonedCount > 0) {

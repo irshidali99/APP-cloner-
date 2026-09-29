@@ -19,8 +19,16 @@ data class CloneOutcome(
     val manifestPackage: String?,
     val resourcePackage: String?,
     val certificateFingerprint: String,
-    val durationMillis: Long
+    val durationMillis: Long,
+    /** Every APK of the clone; more than one entry for apps that were shipped as an app bundle. */
+    val bundleParts: List<File> = listOf(apkFile),
+    /** Names of the configuration/feature splits that were cloned. */
+    val splitNames: List<String> = emptyList(),
+    /** Signature schemes verified on the parts, e.g. `v1+v2`. */
+    val signatureSchemes: String = ""
 ) {
+    val isBundle: Boolean get() = bundleParts.size > 1
+
     /** True only when the signature verifies *and* both package identities match the requested one. */
     val isVerified: Boolean
         get() = signature.isValid &&
@@ -31,6 +39,9 @@ data class CloneOutcome(
     fun summary(): String = buildString {
         append(if (isVerified) "Verified clone" else "Unverified output")
         append(" - ").append(report.originalPackage).append(" -> ").append(report.newPackage)
+        if (isBundle) {
+            append(", bundle with ").append(bundleParts.size).append(" parts")
+        }
         if (report.iconEntriesReplaced.isNotEmpty()) {
             append(", icon replaced (").append(report.iconEntriesReplaced.size).append(" file(s))")
         }

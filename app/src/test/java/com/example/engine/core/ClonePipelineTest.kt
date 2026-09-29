@@ -3,6 +3,7 @@ package com.example.engine.core
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -143,6 +144,61 @@ class ClonePipelineTest {
             assertEquals(700, iconBytes.size)
         } finally {
             archive.close()
+        }
+    }
+
+    @Test
+    fun `bundle transform re-targets every part and keeps the split names`() {
+        val sourceDirectory = temporary.newFolder("bundle-source")
+        val base = TestFixtures.apk(File(sourceDirectory, "base.apk"))
+        val split = TestFixtures.splitApk(File(sourceDirectory, "split_config.en.apk"), "config.en")
+        val outputDirectory = File(temporary.newFolder("bundle-output"), "unsigned").apply { mkdirs() }
+
+        val pair = keyPair()
+        val certificate = X509SelfSigned.create(pair, "App Cloner Test")
+        val report = ApkTransformer.transformBundle(
+            CloneBundleRequest(
+                baseApk = base,
+                splitApks = listOf(split),
+                outputDirectory = outputDirectory,
+                newPackage = newPackage,
+                newLabel = newLabel,
+                iconPng = ByteArray(700) { 0x33 }
+            ),
+            certificate,
+            pair.private
+        )
+
+        assertTrue(report.isBundle)
+        assertEquals(2, report.apkFiles.size)
+        assertEquals("base.apk", report.baseFile.name)
+        assertEquals("split_config.en.apk", report.splitFiles.single().name)
+        assertEquals("config.en", report.splits.single().splitName)
+        assertNull("the base must not look like a split", ApkTransformer.readSplitName(report.baseFile))
+        assertEquals(listOf(TestFixtures.ICON_PATH), report.base.iconEntriesReplaced)
+
+        val cloneReport = ApkTransformer.readPackageIdentity(report.splitFiles.single())
+        assertEquals(newPackage, cloneReport.first)
+        assertEquals(newPackage, cloneReport.second)
+
+        // the split keeps its payload, only its identity changed
+        val splitArchive = ZipArchive(report.splitFiles.single())
+        try {
+            assertNotNull(splitArchive.findEntry("assets/config.en.bin"))
+            assertTrue(splitArchive.entries.none { it.name.startsWith("META-INF/") })
+        } finally {
+            splitArchive.close()
+        }
+
+        // every part is a valid, independently signed APK
+        for (part in report.apkFiles) {
+            assertEquals(newPackage, ApkTransformer.readPackageIdentity(part).first)
+            assertTrue("v1 signature of ${part.name}", ApkSignatureSchemeV2.hasV1Signature(part))
+            ApkSignatureSchemeV2.signInPlace(part, certificate, pair.private)
+            val verification = ApkSignatureSchemeV2.verify(part)
+            assertTrue("v2 signature of ${part.name}: ${verification.detail}", verification.isValid)
+            assertEquals(listOf("v1", "v2"), verification.schemes)
+            assertEquals("config.en", ApkTransformer.readSplitName(report.splitFiles.single()))
         }
     }
 

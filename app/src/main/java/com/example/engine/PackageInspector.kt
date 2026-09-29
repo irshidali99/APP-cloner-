@@ -106,7 +106,7 @@ class PackageInspector(private val context: Context) {
                             isSplitApk = isSplit,
                             targetSdkVersion = appInfo.targetSdkVersion,
                             apkSizeBytes = apkSize,
-                            isCloneable = !isSystem && !isSplit,
+                            isCloneable = !isSystem,
                             clonedCount = if (isClone) 1 else 0,
                             iconBitmap = icon
                         )

@@ -39,6 +39,15 @@ data class CloneRequest(
     val iconPng: ByteArray? = null
 )
 
+/** Which part of an app bundle an APK is. */
+enum class CloneRole {
+    /** The `base.apk`: carries the launcher entry, the label, the providers and the icon. */
+    BASE,
+
+    /** A configuration or feature split: only the package name has to change. */
+    SPLIT
+}
+
 /** Everything the caller (and the user) should know about a finished transformation. */
 data class CloneReport(
     val originalPackage: String,
@@ -50,8 +59,35 @@ data class CloneReport(
     val resourceTableRewritten: Boolean,
     val iconEntriesReplaced: List<String>,
     val foreignAuthorities: List<String>,
-    val warnings: List<String>
+    val warnings: List<String>,
+    val role: CloneRole = CloneRole.BASE,
+    /** Value of the `split` attribute for split APKs, `null` for the base. */
+    val splitName: String? = null
 )
+
+/** An app bundle to clone: the base APK plus every configuration/feature split. */
+data class CloneBundleRequest(
+    val baseApk: File,
+    val splitApks: List<File>,
+    val outputDirectory: File,
+    val newPackage: String,
+    val newLabel: String? = null,
+    val iconPng: ByteArray? = null
+)
+
+/** Result of cloning a whole bundle. */
+data class CloneBundleReport(
+    val base: CloneReport,
+    val splits: List<CloneReport>,
+    val baseFile: File,
+    val splitFiles: List<File>,
+    val warnings: List<String>
+) {
+    /** Every APK that has to be installed together, base first. */
+    val apkFiles: List<File> get() = listOf(baseFile) + splitFiles
+
+    val isBundle: Boolean get() = splitFiles.isNotEmpty()
+}
 
 /**
  * Turns an installed application's APK into an independent clone.
@@ -78,7 +114,8 @@ object ApkTransformer {
     fun transform(
         request: CloneRequest,
         certificate: java.security.cert.X509Certificate,
-        privateKey: java.security.PrivateKey
+        privateKey: java.security.PrivateKey,
+        role: CloneRole = CloneRole.BASE
     ): CloneReport {
         val warnings = ArrayList<String>()
         val archive = ZipArchive(request.sourceApk)
@@ -86,26 +123,39 @@ object ApkTransformer {
             val manifestEntry = archive.findEntry(MANIFEST)
                 ?: throw IllegalArgumentException("source APK has no AndroidManifest.xml")
             val resourceEntry = archive.findEntry(RESOURCES)
-                ?: throw IllegalArgumentException("source APK has no resources.arsc")
+            if (resourceEntry == null && role == CloneRole.BASE) {
+                throw IllegalArgumentException("source APK has no resources.arsc")
+            }
+            if (resourceEntry == null) {
+                warnings.add("split '${request.sourceApk.name}' has no resource table, only its manifest was rewritten")
+            }
 
             // ---- resources.arsc ------------------------------------------------------------------
-            val resourceBytes = archive.readEntry(resourceEntry)
-            require(resourceBytes.size <= MAX_ARSC_BYTES) { "resources.arsc is unexpectedly large" }
-            val arsc = ArscEditor.parse(resourceBytes)
-            val packageChunk = arsc.primaryPackage
-                ?: throw IllegalArgumentException("resource table has no package chunk")
-            if (!packageChunk.canHold(request.newPackage)) {
-                throw IllegalArgumentException(
-                    "package name '${request.newPackage}' does not fit into the resource table " +
-                        "(maximum ${packageChunk.nameCharCapacity} characters). Choose a shorter name."
-                )
+            val resourceBytes = resourceEntry?.let { archive.readEntry(it) }
+            var rewrittenResources: ByteArray? = null
+            if (resourceBytes != null) {
+                require(resourceBytes.size <= MAX_ARSC_BYTES) { "resources.arsc is unexpectedly large" }
+                val arsc = ArscEditor.parse(resourceBytes)
+                val packageChunk = arsc.primaryPackage
+                    ?: throw IllegalArgumentException("resource table has no package chunk")
+                if (!packageChunk.canHold(request.newPackage)) {
+                    throw IllegalArgumentException(
+                        "package name '${request.newPackage}' does not fit into the resource table " +
+                            "(maximum ${packageChunk.nameCharCapacity} characters). Choose a shorter name."
+                    )
+                }
+                rewrittenResources = arsc.withPackageName(request.newPackage)
             }
-            val rewrittenResources = arsc.withPackageName(request.newPackage)
 
             // ---- AndroidManifest.xml -------------------------------------------------------------
             val manifestBytes = archive.readEntry(manifestEntry)
             val editor = AxmlEditor.parse(manifestBytes)
-            val rewriteReport = ManifestRewriter.rewrite(editor, request.newPackage, request.newLabel)
+            val rewriteReport = ManifestRewriter.rewrite(
+                editor = editor,
+                newPackage = request.newPackage,
+                cloneLabel = if (role == CloneRole.BASE) request.newLabel else null,
+                retargetComponents = role == CloneRole.BASE
+            )
             if (rewriteReport.foreignAuthorities.isNotEmpty()) {
                 warnings.add(
                     "providers declaring foreign authorities were left unchanged: " +
@@ -123,8 +173,12 @@ object ApkTransformer {
                     }
                 iconAttribute?.takeIf { it.valueType == ResValueType.REFERENCE }?.valueData
             }
-            val resourceName = iconAttributeValue?.let { arsc.findResource(it) }
-            if (request.iconPng != null) {
+            val resourceName = if (role == CloneRole.BASE && resourceBytes != null) {
+                iconAttributeValue?.let { ArscEditor.parse(resourceBytes).findResource(it) }
+            } else {
+                null
+            }
+            if (request.iconPng != null && role == CloneRole.BASE) {
                 if (resourceName == null) {
                     warnings.add("launcher icon could not be resolved, the badge was not applied")
                 } else if (resourceName.typeName !in setOf("mipmap", "drawable")) {
@@ -157,7 +211,7 @@ object ApkTransformer {
                         entriesWritten++
                     }
 
-                    entry.name == RESOURCES -> {
+                    entry.name == RESOURCES && rewrittenResources != null -> {
                         // must be stored uncompressed and 4 byte aligned since API 30
                         writer.writeEntry(
                             RESOURCES, rewrittenResources, alignment = 4, compress = false,
@@ -167,7 +221,8 @@ object ApkTransformer {
                         entriesWritten++
                     }
 
-                    request.iconPng != null && resourceName != null &&
+                    request.iconPng != null && role == CloneRole.BASE && resourceName != null &&
+                        !entry.name.endsWith(".xml", ignoreCase = true) &&
                         resourceName.matchesZipEntry(entry.name) -> {
                         writer.writeEntry(
                             entry.name, request.iconPng, alignment = 4, compress = false,
@@ -204,13 +259,103 @@ object ApkTransformer {
                 newLabel = rewriteReport.applicationLabelChanged,
                 entriesWritten = entriesWritten,
                 manifestRewritten = true,
-                resourceTableRewritten = true,
+                resourceTableRewritten = rewrittenResources != null,
                 iconEntriesReplaced = iconTargets,
                 foreignAuthorities = rewriteReport.foreignAuthorities,
-                warnings = warnings
+                warnings = warnings,
+                role = role,
+                splitName = readSplitName(editor)
             )
         } finally {
             archive.close()
+        }
+    }
+
+    /**
+     * Clones an app that is shipped as an app bundle: the base APK plus every split.
+     *
+     * Every part gets the new package name injected into its manifest and its resource table, every part is
+     * signed with the same certificate, and the parts are written next to each other so the installer can
+     * hand them to Android as one multi APK session (exactly how the Play Store installs split apps).
+     */
+    fun transformBundle(
+        request: CloneBundleRequest,
+        certificate: java.security.cert.X509Certificate,
+        privateKey: java.security.PrivateKey
+    ): CloneBundleReport {
+        val warnings = ArrayList<String>()
+        require(request.newPackage.isNotBlank()) { "new package name must not be blank" }
+        request.outputDirectory.mkdirs()
+
+        val baseOutput = File(request.outputDirectory, request.baseApk.name)
+        val baseReport = transform(
+            request = CloneRequest(
+                sourceApk = request.baseApk,
+                outputApk = baseOutput,
+                newPackage = request.newPackage,
+                newLabel = request.newLabel,
+                iconPng = request.iconPng
+            ),
+            certificate = certificate,
+            privateKey = privateKey,
+            role = CloneRole.BASE
+        )
+        warnings.addAll(baseReport.warnings)
+
+        val splitReports = ArrayList<CloneReport>()
+        val splitFiles = ArrayList<File>()
+        for (split in request.splitApks) {
+            if (split.name == request.baseApk.name) {
+                warnings.add("split '${split.name}' has the same file name as the base and was skipped")
+                continue
+            }
+            val report = try {
+                transform(
+                    request = CloneRequest(
+                        sourceApk = split,
+                        outputApk = File(request.outputDirectory, split.name),
+                        newPackage = request.newPackage,
+                        newLabel = null,
+                        iconPng = null
+                    ),
+                    certificate = certificate,
+                    privateKey = privateKey,
+                    role = CloneRole.SPLIT
+                )
+            } catch (error: Exception) {
+                // A split that cannot be re-targeted must not silently disappear: without it the clone is
+                // incomplete, so the whole bundle fails with a message naming the split.
+                throw IllegalStateException(
+                    "split '${split.name}' could not be cloned: ${error.message ?: error::class.simpleName}",
+                    error
+                )
+            }
+            splitReports.add(report)
+            splitFiles.add(File(request.outputDirectory, split.name))
+            warnings.addAll(report.warnings)
+        }
+
+        return CloneBundleReport(
+            base = baseReport,
+            splits = splitReports,
+            baseFile = baseOutput,
+            splitFiles = splitFiles,
+            warnings = warnings
+        )
+    }
+
+    /** Reads the `split` attribute of an APK's manifest, `null` when the APK is not a split. */
+    fun readSplitName(editor: AxmlEditor): String? {
+        val root = editor.startElements().firstOrNull { editor.elementName(it) == "manifest" } ?: return null
+        val attribute = editor.findAttribute(root, null, "split") ?: return null
+        return editor.string(attribute.rawValue)?.takeIf { it.isNotBlank() }
+    }
+
+    /** Reads the `split` attribute from an APK file. */
+    fun readSplitName(apk: File): String? {
+        ZipArchive(apk).use { archive ->
+            val manifestEntry = archive.findEntry(MANIFEST) ?: return null
+            return readSplitName(AxmlEditor.parse(archive.readEntry(manifestEntry)))
         }
     }
 

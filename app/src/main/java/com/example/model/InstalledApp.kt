@@ -16,11 +16,11 @@ data class InstalledApp(
     val isSplitApk: Boolean = splitSourceDirs.isNotEmpty(),
     val targetSdkVersion: Int = 0,
     val apkSizeBytes: Long = 0L,
-    val isCloneable: Boolean = !isSystemApp && splitSourceDirs.isEmpty(),
+    val isCloneable: Boolean = !isSystemApp,
     val compatibilityReason: String = if (isSystemApp) {
         "System application (Protected)"
     } else if (splitSourceDirs.isNotEmpty()) {
-        "Split APK format (App Bundle / Dynamic Features not supported for arbitrary single-file repackaging)"
+        "App bundle (${splitSourceDirs.size + 1} parts) - cloned and installed as a bundle"
     } else {
         "Standalone APK (Supported)"
     },

@@ -21,6 +21,11 @@ class CloneRepository(
     fun getClonesForSource(sourcePackage: String): Flow<List<CloneRecord>> =
         cloneRecordDao.getClonesForSource(sourcePackage)
 
+    /** Finds the record of a clone by the package id it installs as. */
+    suspend fun findByPackageId(packageId: String): CloneRecord? = withContext(Dispatchers.IO) {
+        cloneRecordDao.getCloneByPackageId(packageId)
+    }
+
     suspend fun saveClone(record: CloneRecord): Long = withContext(Dispatchers.IO) {
         cloneRecordDao.insertClone(record)
     }

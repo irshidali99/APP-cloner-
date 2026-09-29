@@ -132,7 +132,7 @@ fun CloneReadySuccessScreen(
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "The standalone APK has been compiled, signed with a local certificate, and verified for installation.",
+                    text = "The clone has been compiled, signed with a local certificate and verified for installation.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 8.dp)

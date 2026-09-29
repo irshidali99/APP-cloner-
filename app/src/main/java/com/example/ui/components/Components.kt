@@ -162,6 +162,17 @@ fun CloneableBadge(modifier: Modifier = Modifier) {
     )
 }
 
+/** Marks an app that Android shipped as an app bundle; all parts are cloned together. */
+@Composable
+fun BundleBadge(parts: Int, modifier: Modifier = Modifier) {
+    StatusBadge(
+        text = "Bundle ($parts parts)",
+        textColor = StatusCloneableText,
+        backgroundColor = StatusCloneableBg,
+        modifier = modifier
+    )
+}
+
 @Composable
 fun ClonedBadge(count: Int, modifier: Modifier = Modifier) {
     StatusBadge(

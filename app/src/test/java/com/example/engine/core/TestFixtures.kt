@@ -42,12 +42,24 @@ object TestFixtures {
 
     private fun stringIndex(value: String): Int = manifestStrings.indexOf(value)
 
+    private fun stringsFor(splitName: String?): List<String> =
+        if (splitName == null) manifestStrings else manifestStrings + listOf("split", splitName)
+
     /** A binary `AndroidManifest.xml` equivalent to a small real-world app. */
     fun manifest(file: File) = file.writeBytes(manifestBytes())
 
-    fun manifestBytes(): ByteArray {
+    /**
+     * @param splitName when set, the manifest gets a `split` attribute and the APK is accepted as a
+     *   configuration split of an app bundle.
+     */
+    fun manifestBytes(splitName: String? = null): ByteArray {
+        val strings = stringsFor(splitName)
+        fun index(value: String): Int = strings.indexOf(value).also {
+            require(it >= 0) { "fixture string '$value' is missing" }
+        }
+
         val writer = LeWriter(2048)
-        val pool = buildStringPool(manifestStrings, utf8 = true)
+        val pool = buildStringPool(strings, utf8 = true)
 
         val resourceMap = intArrayOf(ATTR_NAME, ATTR_LABEL, ATTR_ICON, ATTR_EXPORTED, ATTR_AUTHORITIES)
         val resourceMapSize = CHUNK_HEADER_SIZE + resourceMap.size * 4
@@ -62,19 +74,17 @@ object TestFixtures {
         }
 
         addNode(namespaceNode(start = true, "android", ANDROID_NAMESPACE))
-        addNode(
-            startElement(
-                "manifest",
-                listOf(
-                    attribute(null, "package", TYPE_STRING, stringIndex(ORIGINAL_PACKAGE))
-                )
-            )
-        )
+        val manifestAttributes = ArrayList<ByteArray>()
+        manifestAttributes.add(attribute(null, "package", TYPE_STRING, index(ORIGINAL_PACKAGE)))
+        if (splitName != null) {
+            manifestAttributes.add(attribute(null, "split", TYPE_STRING, index(splitName)))
+        }
+        addNode(startElement("manifest", manifestAttributes))
         addNode(
             startElement(
                 "application",
                 listOf(
-                    attribute(ANDROID_NAMESPACE, "label", TYPE_STRING, stringIndex(ORIGINAL_LABEL)),
+                    attribute(ANDROID_NAMESPACE, "label", TYPE_STRING, index(ORIGINAL_LABEL)),
                     attribute(ANDROID_NAMESPACE, "icon", TYPE_REFERENCE, 0x7f010000)
                 )
             )
@@ -83,8 +93,8 @@ object TestFixtures {
             startElement(
                 "provider",
                 listOf(
-                    attribute(ANDROID_NAMESPACE, "name", TYPE_STRING, stringIndex(".DataProvider")),
-                    attribute(ANDROID_NAMESPACE, "authorities", TYPE_STRING, stringIndex(PROVIDER_AUTHORITY)),
+                    attribute(ANDROID_NAMESPACE, "name", TYPE_STRING, index(".DataProvider")),
+                    attribute(ANDROID_NAMESPACE, "authorities", TYPE_STRING, index(PROVIDER_AUTHORITY)),
                     attribute(ANDROID_NAMESPACE, "exported", TYPE_INT_BOOLEAN, 0)
                 )
             )
@@ -93,7 +103,7 @@ object TestFixtures {
         addNode(
             startElement(
                 "activity",
-                listOf(attribute(ANDROID_NAMESPACE, "name", TYPE_STRING, stringIndex(".MainActivity")))
+                listOf(attribute(ANDROID_NAMESPACE, "name", TYPE_STRING, index(".MainActivity")))
             )
         )
         addNode(endElement("activity"))
@@ -206,6 +216,17 @@ object TestFixtures {
             zip.writeStored("res/mipmap-hdpi-v4/ic_launcher_round.png", ByteArray(256) { 0x22 })
             zip.writeStored("META-INF/OLD.SF", "old signature".toByteArray())
             zip.writeStored("META-INF/OLD.RSA", "old certificate".toByteArray())
+        }
+        return file
+    }
+
+    /** A typical configuration split of the fixture app (manifest + resource table + payload). */
+    fun splitApk(file: File, splitName: String): File {
+        ZipOutputStream(FileOutputStream(file)).use { zip ->
+            zip.writeStored("AndroidManifest.xml", manifestBytes(splitName = splitName))
+            zip.writeStored("resources.arsc", resourceTableBytes())
+            zip.writeDeflated("classes.dex", ByteArray(1024) { (it % 89).toByte() })
+            zip.writeStored("assets/$splitName.bin", ByteArray(128) { 0x44 })
         }
         return file
     }

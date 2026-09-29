@@ -3,9 +3,10 @@ package com.example.engine
 import android.content.Context
 import com.example.engine.core.ApkSignatureSchemeV2
 import com.example.engine.core.ApkTransformer
-import com.example.engine.core.ArscEditor
+import com.example.engine.core.CloneBundleRequest
 import com.example.engine.core.CloneReport
 import com.example.engine.core.CloneRequest
+import com.example.engine.core.ArscEditor
 import com.example.engine.core.ZipArchive
 import com.example.model.CloneConfig
 import com.example.model.CompatibilityReport
@@ -23,19 +24,26 @@ import java.util.Locale
 /**
  * Builds a standalone clone of an installed application.
  *
- * Pipeline:
- *  1. inspect the source APK (readable, has a manifest and a resource table),
- *  2. validate compatibility (system app, split APK, package name that fits the resource table),
- *  3. render the custom launcher icon and rewrite manifest + resource table,
- *  4. sign with the persistent local identity (JAR v1 during the rewrite, APK Signature Scheme v2 after),
- *  5. verify the output before it is offered for installation.
+ * Works for single APKs **and** for apps that Android shipped as an app bundle (`base.apk` + splits).
+ * For bundles every part is re-targeted and re-signed, written into one directory next to a `parts.txt`,
+ * and installed together as a multi APK session - the same way the Play Store installs split apps.
  *
- * All work is streamed; the generated APK never has to fit into memory.
+ * Pipeline:
+ *  1. inspect the source (readable, has a manifest, has a resource table),
+ *  2. validate compatibility (system app, package name that fits the resource table),
+ *  3. render the custom launcher icon and rewrite manifest + resource table of every part,
+ *  4. sign each part (JAR v1 during the rewrite, APK Signature Scheme v2 afterwards),
+ *  5. verify every part before it is offered for installation.
+ *
+ * All copying is streamed; the generated APKs never have to fit into memory.
  */
 class CloneApkBuilder(
     private val packageInspector: PackageInspector,
     private val keystore: CloneKeystore
 ) : CloneEngine {
+
+    /** A part of the clone that will be installed as one bundle. */
+    data class BundlePart(val file: File, val isSplit: Boolean, val splitName: String?)
 
     override fun checkCompatibility(app: InstalledApp): CompatibilityReport =
         CompatibilityReport.evaluate(app)
@@ -92,12 +100,17 @@ class CloneApkBuilder(
 
         try {
             // ---------------------------------------------------------------- 1. inspect
+            val isBundleSource = sourceApp.splitSourceDirs.isNotEmpty()
             emit(
                 PipelineStage.INSPECT_SOURCE, 0.08f,
-                "Reading ${sourceApp.label} (${sourceApp.packageName})"
+                "Reading ${sourceApp.label} (${sourceApp.packageName})" +
+                    if (isBundleSource) " - ${sourceApp.splitSourceDirs.size + 1} parts" else ""
             )
             log("Source: ${sourceApp.label} ${sourceApp.versionName} (${sourceApp.packageName})")
             log("Source APK: ${sourceApp.sourceDir}")
+            if (isBundleSource) {
+                log("App bundle detected: base + ${sourceApp.splitSourceDirs.size} split(s).")
+            }
 
             val sourceApk = File(sourceApp.sourceDir)
             if (!sourceApk.isFile || !sourceApk.canRead()) {
@@ -107,21 +120,32 @@ class CloneApkBuilder(
                 )
             }
 
+            // Splits that this app cannot read (rare, e.g. removed by an optimiser) are reported, because a
+            // clone without them can be incomplete.
+            val readableSplits = ArrayList<File>()
+            val missingSplits = ArrayList<String>()
+            for (path in sourceApp.splitSourceDirs) {
+                val split = File(path)
+                if (split.isFile && split.canRead()) readableSplits.add(split) else missingSplits.add(split.name)
+            }
+            if (missingSplits.isNotEmpty()) {
+                log("[WARN] unreadable splits: ${missingSplits.joinToString()}")
+            }
+
+            val totalBytes = sourceApk.length() + readableSplits.sumOf { it.length() }
+            log("Total source size: ${totalBytes / 1024} KB")
+
             val archive = ZipArchive(sourceApk)
             val hasManifest: Boolean
             val hasResourceTable: Boolean
             val largestEntry: Long
-            val totalSize: Long
             try {
                 hasManifest = archive.findEntry(ApkTransformer.MANIFEST) != null
                 hasResourceTable = archive.findEntry(ApkTransformer.RESOURCES) != null
                 largestEntry = archive.entries.maxOfOrNull { it.uncompressedSize } ?: 0L
-                totalSize = sourceApk.length()
             } finally {
                 archive.close()
             }
-
-            log("Source APK size: ${totalSize / 1024} KB")
 
             // ---------------------------------------------------------------- 2. validate
             emit(PipelineStage.VALIDATE_COMPATIBILITY, 0.22f, "Validating package and signature constraints")
@@ -141,7 +165,7 @@ class CloneApkBuilder(
                     "The source APK has no AndroidManifest.xml or resources.arsc and cannot be re-targeted."
                 )
             }
-            if (totalSize > MAX_SUPPORTED_BYTES || largestEntry > MAX_SUPPORTED_BYTES) {
+            if (totalBytes > MAX_SUPPORTED_BYTES || largestEntry > MAX_SUPPORTED_BYTES) {
                 return@withContext fail(
                     PipelineStage.FAILED, 0.22f,
                     "APKs above ${MAX_SUPPORTED_BYTES / (1024 * 1024)} MB are not supported by the current writer."
@@ -175,7 +199,7 @@ class CloneApkBuilder(
                 )
             }
 
-            log("Compatibility verified: standalone package, package name fits ($capacity characters available).")
+            log("Compatibility verified: $capacity characters available for the package name.")
 
             // ---------------------------------------------------------------- 3. rewrite
             val iconPng = sourceApp.iconBitmap?.let { bitmap ->
@@ -194,82 +218,152 @@ class CloneApkBuilder(
 
             emit(
                 PipelineStage.PREPARE_PACKAGE, 0.45f,
-                "Rewriting AndroidManifest.xml and resources.arsc"
+                if (isBundleSource) {
+                    "Rewriting base.apk and ${readableSplits.size} split(s)"
+                } else {
+                    "Rewriting AndroidManifest.xml and resources.arsc"
+                }
             )
 
             val identity = keystore.identity()
-            val unsigned = File(workspace, "clone-unsigned.apk")
-            val report: CloneReport = ApkTransformer.transform(
-                request = CloneRequest(
-                    sourceApk = sourceApk,
-                    outputApk = unsigned,
-                    newPackage = config.clonePackageId,
-                    newLabel = config.cloneName,
-                    iconPng = iconPng
-                ),
-                certificate = identity.certificate,
-                privateKey = identity.privateKey
-            )
+            val unsignedDirectory = File(workspace, "unsigned").apply { mkdirs() }
+
+            val report: CloneReport
+            val parts: List<BundlePart>
+
+            if (isBundleSource) {
+                val result = ApkTransformer.transformBundle(
+                    request = CloneBundleRequest(
+                        baseApk = sourceApk,
+                        splitApks = readableSplits,
+                        outputDirectory = unsignedDirectory,
+                        newPackage = config.clonePackageId,
+                        newLabel = config.cloneName,
+                        iconPng = iconPng
+                    ),
+                    certificate = identity.certificate,
+                    privateKey = identity.privateKey
+                )
+                report = result.base
+                parts = listOf(BundlePart(result.baseFile, isSplit = false, splitName = null)) +
+                    result.splitFiles.map {
+                        BundlePart(it, isSplit = true, splitName = ApkTransformer.readSplitName(it))
+                    }
+                result.warnings.forEach { log("[WARN] $it") }
+            } else {
+                val output = File(unsignedDirectory, sourceApk.name)
+                report = ApkTransformer.transform(
+                    request = CloneRequest(
+                        sourceApk = sourceApk,
+                        outputApk = output,
+                        newPackage = config.clonePackageId,
+                        newLabel = config.cloneName,
+                        iconPng = iconPng
+                    ),
+                    certificate = identity.certificate,
+                    privateKey = identity.privateKey
+                )
+                parts = listOf(BundlePart(output, isSplit = false, splitName = null))
+                report.warnings.forEach { log("[WARN] $it") }
+            }
 
             log("Manifest rewritten: package ${report.originalPackage} -> ${report.newPackage}")
             log("Resource table re-targeted (${report.entriesWritten} entries copied).")
             if (report.iconEntriesReplaced.isNotEmpty()) {
                 log("Launcher icon replaced: ${report.iconEntriesReplaced.joinToString()}")
             }
-            report.warnings.forEach { log("[WARN] $it") }
+            parts.filter { it.isSplit }.forEach { part ->
+                log("Split kept: ${part.file.name}${part.splitName?.let { " ($it)" } ?: ""}")
+            }
             if (report.foreignAuthorities.isNotEmpty()) {
                 log("Foreign provider authorities left untouched: ${report.foreignAuthorities.joinToString()}")
             }
 
             // ---------------------------------------------------------------- 4. sign
-            emit(PipelineStage.BUILD_SIGN, 0.68f, "Applying APK Signature Scheme v2")
-            ApkSignatureSchemeV2.signInPlace(unsigned, identity.certificate, identity.privateKey)
+            emit(PipelineStage.BUILD_SIGN, 0.68f, "Applying APK Signature Scheme v2 to ${parts.size} part(s)")
+            for (part in parts) {
+                ApkSignatureSchemeV2.signInPlace(part.file, identity.certificate, identity.privateKey)
+            }
             log("Signed with ${identity.certificate.subjectX500Principal.name} (v1 + v2).")
             log("Certificate SHA-256: ${identity.fingerprint}")
 
             // ---------------------------------------------------------------- 5. verify
-            emit(PipelineStage.VERIFY_OUTPUT, 0.88f, "Verifying package identity and signature")
+            emit(PipelineStage.VERIFY_OUTPUT, 0.88f, "Verifying package identity and signature of every part")
 
-            val signature = ApkSignatureSchemeV2.verify(unsigned)
-            val identityCheck = ApkTransformer.readPackageIdentity(unsigned)
-            val manifestPackage = identityCheck.first
-            val resourcePackage = identityCheck.second
-
-            if (!signature.isValid) {
+            val failures = ArrayList<String>()
+            var schemes = ""
+            for (part in parts) {
+                val signature = ApkSignatureSchemeV2.verify(part.file)
+                schemes = signature.schemes.joinToString("+")
+                if (!signature.isValid) {
+                    failures.add("${part.file.name}: ${signature.detail}")
+                }
+                val identityCheck = ApkTransformer.readPackageIdentity(part.file)
+                if (identityCheck.first != config.clonePackageId) {
+                    failures.add("${part.file.name}: manifest package is ${identityCheck.first}")
+                }
+                val resourcePackage = identityCheck.second
+                if (part.file.name == sourceApk.name && resourcePackage == null) {
+                    failures.add("${part.file.name}: the clone lost its resource table")
+                } else if (resourcePackage != null && resourcePackage != config.clonePackageId) {
+                    failures.add("${part.file.name}: resource table package is $resourcePackage")
+                }
+                if (part.isSplit && part.splitName != ApkTransformer.readSplitName(part.file)) {
+                    failures.add("${part.file.name}: split name changed")
+                }
+            }
+            if (failures.isNotEmpty()) {
                 return@withContext fail(
                     PipelineStage.FAILED, 0.88f,
-                    "Signature verification failed: ${signature.detail}"
-                )
-            }
-            if (manifestPackage != config.clonePackageId || resourcePackage != config.clonePackageId) {
-                return@withContext fail(
-                    PipelineStage.FAILED, 0.88f,
-                    "Package identity mismatch: manifest=$manifestPackage, resource table=$resourcePackage."
+                    "Verification failed - " + failures.joinToString("; ")
                 )
             }
 
-            val outputDirectory = File(context.filesDir, "clones").apply { mkdirs() }
+            // ---------------------------------------------------------------- output
+            val clonesDirectory = File(context.filesDir, "clones").apply { mkdirs() }
             val sanitized = config.cloneName.replace(Regex("[^A-Za-z0-9._-]"), "_").take(48)
-            val outputFile = File(outputDirectory, "${sanitized}-${System.currentTimeMillis()}.apk")
-            unsigned.copyTo(outputFile, overwrite = true)
-            unsigned.delete()
+            val outputDirectory = File(clonesDirectory, "$sanitized-${System.currentTimeMillis()}")
+            outputDirectory.mkdirs()
+
+            val outputParts = ArrayList<File>()
+            for (part in parts) {
+                val destination = File(outputDirectory, part.file.name)
+                part.file.copyTo(destination, overwrite = true)
+                outputParts.add(destination)
+            }
+            // parts.txt tells the installer that these APKs belong together as one bundle.
+            File(outputDirectory, PARTS_FILE).writeText(outputParts.joinToString("\n") { it.name })
+
+            val baseFile = outputParts.first()
+            val baseSignature = ApkSignatureSchemeV2.verify(baseFile)
+            val baseIdentity = ApkTransformer.readPackageIdentity(baseFile)
 
             val outcome = CloneOutcome(
-                apkFile = outputFile,
+                apkFile = baseFile,
                 report = report,
-                signature = signature,
-                manifestPackage = manifestPackage,
-                resourcePackage = resourcePackage,
+                signature = baseSignature,
+                manifestPackage = baseIdentity.first,
+                resourcePackage = baseIdentity.second,
                 certificateFingerprint = identity.fingerprint,
-                durationMillis = System.currentTimeMillis() - startedAt
+                durationMillis = System.currentTimeMillis() - startedAt,
+                bundleParts = outputParts,
+                splitNames = parts.filter { it.isSplit }.mapNotNull { it.splitName },
+                signatureSchemes = schemes
             )
 
-            log("Verified: v2 signature ${signature.detail}.")
-            log("Output: ${outputFile.name} (${outputFile.length() / 1024} KB)")
+            unsignedDirectory.deleteRecursively()
+
+            log("Verified: signature $schemes valid for all ${outputParts.size} part(s).")
+            log("Output: ${outputDirectory.name} (${outputParts.sumOf { it.length() } / 1024} KB)")
 
             emit(
                 PipelineStage.COMPLETED, 1f,
-                "Clone ready for installation", complete = true, outcome = outcome
+                if (outcome.isBundle) {
+                    "Clone ready: base + ${outcome.bundleParts.size - 1} split(s)"
+                } else {
+                    "Clone ready for installation"
+                },
+                complete = true, outcome = outcome
             )
             Result.success(outcome)
         } catch (cancelled: CancellationException) {
@@ -287,5 +381,8 @@ class CloneApkBuilder(
     private companion object {
         /** The writer emits 32 bit zip fields, so anything close to the 4 GiB limit is refused up front. */
         const val MAX_SUPPORTED_BYTES = 3_500_000_000L
+
+        /** Lists the APK parts of a clone so the installer knows they belong to one bundle. */
+        const val PARTS_FILE = "parts.txt"
     }
 }

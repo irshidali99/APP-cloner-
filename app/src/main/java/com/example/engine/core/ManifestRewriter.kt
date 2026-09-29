@@ -24,10 +24,16 @@ data class ManifestRewriteReport(
  */
 object ManifestRewriter {
 
+    /**
+     * @param retargetComponents when `false` only the `package` attribute is rewritten. That is all a
+     *   split APK of an app bundle needs: splits carry no launcher entry, no label and usually no
+     *   providers, and their `split` attribute has to stay untouched.
+     */
     fun rewrite(
         editor: AxmlEditor,
         newPackage: String,
-        cloneLabel: String? = null
+        cloneLabel: String? = null,
+        retargetComponents: Boolean = true
     ): ManifestRewriteReport {
         val root = editor.startElements().firstOrNull { editor.elementName(it) == "manifest" }
             ?: throw IllegalArgumentException("manifest element not found")
@@ -53,6 +59,18 @@ object ManifestRewriter {
         val foreignAuthorities = mutableListOf<String>()
         var authoritiesChanged = 0
         var labelChanged: String? = null
+
+        if (!retargetComponents) {
+            return ManifestRewriteReport(
+                originalPackage = originalPackage,
+                newPackage = newPackage,
+                applicationLabelChanged = null,
+                qualifiedComponents = 0,
+                authoritiesChanged = 0,
+                attributesChanged = attributesChanged,
+                foreignAuthorities = emptyList()
+            )
+        }
 
         for (element in editor.startElements()) {
             val elementName = editor.elementName(element) ?: continue

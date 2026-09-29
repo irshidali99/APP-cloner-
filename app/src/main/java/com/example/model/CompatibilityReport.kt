@@ -28,13 +28,13 @@ data class CompatibilityReport(
 
             if (app.isSplitApk) {
                 return CompatibilityReport(
-                    isSupported = false,
-                    formatDescription = "Split APKs / Dynamic App Bundle (${app.splitSourceDirs.size + 1} parts)",
+                    isSupported = true,
+                    formatDescription = "App bundle (${app.splitSourceDirs.size + 1} parts)",
                     splitApkDetected = true,
                     systemAppProtected = false,
-                    signatureRestrictionsNote = "Split APKs contain modular feature splits (base.apk + split_config.*.apk). Merging arbitrary split APKs into a valid single-APK requires source rebuild and violates Android signing guarantees.",
-                    technicalDetails = "Modern Play Store apps use Android App Bundles (AAB) split across ABI, screen density, and localized language slices. Repackaging splits arbitrarily leads to missing resource ID tables or runtime classloading crashes.",
-                    recommendedAction = "Only monolithic, standalone APK packages can be reliably cloned into independent packages."
+                    signatureRestrictionsNote = "Apps installed as base + configuration splits are cloned as a whole: every part keeps its split name and gets the new package name and the same certificate, so Android installs them together as one app. All parts must be installed in a single step - installing only the base would leave the clone without its native libraries or density resources.",
+                    technicalDetails = "The bundle contains the base APK plus ${app.splitSourceDirs.size} split APK(s) (ABI, density, language and feature splits). Each part is re-targeted in its manifest and resource table, re-signed with the local certificate and installed through one multi APK session.",
+                    recommendedAction = "Proceed with clone configuration and use the in-app installer to install the whole bundle."
                 )
             }
 
