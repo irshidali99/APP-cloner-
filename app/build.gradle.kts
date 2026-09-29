@@ -90,6 +90,9 @@ android {
     }
     debug {
       applicationIdSuffix = ".debug"
+      // Shipped as a normal, non debuggable app: debug APKs get extra warnings on some ROMs and Play
+      // Protect treats them as less trustworthy. The stable test key above is what matters for updates.
+      isDebuggable = false
       // Prefer the stable test key so builds can be installed on top of each other; otherwise AGP's own
       // debug keystore is used (fine for local development).
       if (rootProject.file("ci/test-signing.jks").exists()) {

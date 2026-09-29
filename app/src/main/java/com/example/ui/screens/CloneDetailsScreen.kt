@@ -192,6 +192,44 @@ fun CloneDetailsScreen(
                                 backgroundColor = Color(0xFFECFDF5)
                             )
                         }
+
+                        // Diagnostics: an app that closes right after its first screen is almost always
+                        // missing parts of its bundle, so show what was cloned versus what is installed.
+                        val expectedSplits = record.splitNames
+                            .split(',')
+                            .map { it.trim() }
+                            .filter { it.isNotEmpty() }
+                        if (expectedSplits.isNotEmpty()) {
+                            val installedSplits = if (record.isInstalled) {
+                                viewModel.installedSplitNames(record.clonePackageId)
+                            } else {
+                                emptyList()
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            StatusBadge(
+                                text = if (!record.isInstalled) {
+                                    "Bundle: base + ${expectedSplits.size} split(s)"
+                                } else if (installedSplits.size >= expectedSplits.size) {
+                                    "All ${expectedSplits.size + 1} parts installed"
+                                } else {
+                                    "Incomplete: ${installedSplits.size} of ${expectedSplits.size} splits installed"
+                                },
+                                textColor = if (record.isInstalled &&
+                                    installedSplits.size < expectedSplits.size
+                                ) Color(0xFFB45309) else Color(0xFF4F46E5),
+                                backgroundColor = if (record.isInstalled &&
+                                    installedSplits.size < expectedSplits.size
+                                ) Color(0xFFFFF7ED) else Color(0xFFEEF2FF)
+                            )
+                        }
+                        if (record.certificateFingerprint.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Certificate SHA-256: ${record.certificateFingerprint}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }

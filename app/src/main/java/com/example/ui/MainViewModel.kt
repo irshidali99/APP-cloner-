@@ -40,6 +40,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val cloneApkBuilder = app.cloneApkBuilder
     val installerManager = app.installerManager
 
+    /** Splits Android reports for an installed clone (empty for single APK clones or when not installed). */
+    fun installedSplitNames(packageId: String): List<String> =
+        packageInspector.installedSplitNames(packageId)
+
     /** "v1+v2" style description of what the generated APK actually carries. */
     private fun signatureSchemeOf(outcome: com.example.engine.CloneOutcome): String =
         outcome.signature.schemes.joinToString("+")
