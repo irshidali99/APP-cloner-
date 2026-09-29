@@ -121,6 +121,44 @@ class PackageInspector(private val context: Context) {
             apps.sortedBy { it.label.lowercase() }
         }
 
+    /**
+     * Clone indexes that are currently installed for [sourcePackage].
+     *
+     * The clone history in the database is not enough to pick a free package name: a record can be deleted
+     * (or never saved) while the clone is still installed, and Android rejects a second package with the same
+     * name.
+     */
+    fun installedCloneIndexes(sourcePackage: String): Set<Int> {
+        val packages = try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                packageManager.getInstalledPackages(PackageManager.PackageInfoFlags.of(0))
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getInstalledPackages(0)
+            }
+        } catch (error: Exception) {
+            emptyList()
+        }
+        return packages.mapNotNull { info ->
+            com.example.model.CloneConfig.cloneIndexSuffix(info.packageName, sourcePackage)
+        }.toSet()
+    }
+
+    /** Split APKs that are actually installed for [packageName] (empty for single APK apps). */
+    fun installedSplitNames(packageName: String): List<String> {
+        return try {
+            val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                packageManager.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getPackageInfo(packageName, 0)
+            }
+            info.splitNames?.toList().orEmpty()
+        } catch (notFound: Exception) {
+            emptyList()
+        }
+    }
+
     fun drawableToBitmap(drawable: Drawable): Bitmap {
         if (drawable is BitmapDrawable && drawable.bitmap != null) {
             return drawable.bitmap

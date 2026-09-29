@@ -61,6 +61,27 @@ class PackageInstallerManager(private val context: Context) {
     }
 
     /**
+     * Split names of a cloned bundle, read from each split's manifest (`config.arm64_v8a`), which is the name
+     * Android reports for an installed split - file names would not match.
+     */
+    fun splitNamesOf(apkFile: File): List<String> = partsOf(apkFile)
+        .filter { it.name != apkFile.name }
+        .mapNotNull { runCatching { com.example.engine.core.ApkTransformer.readSplitName(it) }.getOrNull() }
+
+    /** Split names of an installed package, used to verify a bundle install. */
+    fun installedSplitNames(packageName: String): List<String> = try {
+        val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.packageManager.getPackageInfo(packageName, android.content.pm.PackageManager.PackageInfoFlags.of(0))
+        } else {
+            @Suppress("DEPRECATION")
+            context.packageManager.getPackageInfo(packageName, 0)
+        }
+        info.splitNames?.toList().orEmpty()
+    } catch (notFound: Exception) {
+        emptyList()
+    }
+
+    /**
      * Creates an Intent to invoke the Android System Package Installer for a generated APK.
      * Uses content URI from FileProvider with FLAG_GRANT_READ_URI_PERMISSION.
      */
@@ -118,6 +139,28 @@ class PackageInstallerManager(private val context: Context) {
         val authority = "${context.packageName}.fileprovider"
         val contentUri: Uri = FileProvider.getUriForFile(context, authority, apkFile)
         val parts = partsOf(apkFile)
+
+        if (parts.size > 1) {
+            // Sharing only the base APK would produce a clone that closes right after its first screen, so
+            // every part is attached and the text says why.
+            val uris = ArrayList<Uri>()
+            for (part in parts) {
+                uris.add(FileProvider.getUriForFile(context, authority, part))
+            }
+            val multipleIntent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                type = "application/vnd.android.package-archive"
+                putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+                putExtra(Intent.EXTRA_SUBJECT, "$cloneName APK bundle")
+                putExtra(
+                    Intent.EXTRA_TEXT,
+                    "App bundle clone \"$cloneName\": ${parts.size} APKs (base + splits). " +
+                        "All parts belong together - install them with an installer that handles split APKs " +
+                        "(for example App Cloner's own Install button or 'adb install-multiple')."
+                )
+                flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+            }
+            return Intent.createChooser(multipleIntent, "Share $cloneName APK bundle")
+        }
 
         val shareIntent = Intent(Intent.ACTION_SEND).apply {
             type = "application/vnd.android.package-archive"

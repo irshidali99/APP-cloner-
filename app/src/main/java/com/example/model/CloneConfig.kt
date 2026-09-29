@@ -49,6 +49,18 @@ data class CloneConfig(
             return "$sourcePackage.clone$cloneIndex"
         }
 
+        /**
+         * Index encoded in a clone package id (`com.app.clone3` -> 3), or `null` when [packageId] is not a
+         * clone of [sourcePackage]. Used to pick a package name that is really free: a clone record may have
+         * been deleted while the clone itself is still installed, and reusing its package name makes Android
+         * refuse the install with "package conflicts with an existing package".
+         */
+        fun cloneIndexSuffix(packageId: String, sourcePackage: String): Int? {
+            val prefix = "$sourcePackage.clone"
+            if (!packageId.startsWith(prefix)) return null
+            return packageId.removePrefix(prefix).toIntOrNull()
+        }
+
         fun generateDefaultCloneName(sourceAppName: String, cloneIndex: Int, autoNumber: Boolean): String {
             return if (autoNumber) {
                 "$sourceAppName (Clone $cloneIndex)"

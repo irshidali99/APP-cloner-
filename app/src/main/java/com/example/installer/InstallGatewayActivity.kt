@@ -56,7 +56,13 @@ class InstallGatewayActivity : Activity() {
         val manager = PackageInstallerManager(this)
         val parts = manager.partsOf(baseApk)
         statusView = TextView(this).apply {
-            text = "Preparing to install $cloneName\n${parts.size} APK part(s)"
+            text = buildString {
+                append("Preparing to install $cloneName\n")
+                append("${parts.size} APK part(s)\n\n")
+                append("Google Play Protect may warn about this app because the clone is signed with a new\n")
+                append("certificate instead of the original developer's key. That warning is expected for clones:\n")
+                append("tap \"More details\" and then \"Install anyway\" to continue.")
+            }
             setPadding(48, 96, 48, 48)
         }
         val progress = ProgressBar(this)
@@ -92,8 +98,11 @@ class InstallGatewayActivity : Activity() {
             return
         }
 
+        expectedSplitNames = PackageInstallerManager(this).splitNamesOf(baseApk)
         startSession(parts, cloneName)
     }
+
+    private var expectedSplitNames: List<String> = emptyList()
 
     private fun isInstalled(packageName: String): Boolean = try {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -136,7 +145,18 @@ class InstallGatewayActivity : Activity() {
             // The installer fills in the confirmation intent and the status extras.
             flags = flags or PendingIntent.FLAG_MUTABLE
         }
-        val pendingIntent = PendingIntent.getBroadcast(this, SESSION_REQUEST_CODE, resultIntent, flags)
+        // A fresh request code per session: reusing one cached PendingIntent across installs is a known way
+        // to lose the installer's answer (and then nothing appears to happen).
+        val requestCode = (System.currentTimeMillis() and 0x7FFFFFFF).toInt()
+        val pendingIntent = PendingIntent.getBroadcast(this, requestCode, resultIntent, flags)
+
+        // Cleaning up sessions left over from earlier attempts avoids "session already active" failures.
+        runCatching {
+            val installer = packageManager.packageInstaller
+            installer.mySessions.forEach { session ->
+                if (session.isActive) installer.abandonSession(session.sessionId)
+            }
+        }
 
         val sessionId = PackageInstallerManager(this).createSession(parts, pendingIntent.intentSender)
         if (sessionId < 0) {
@@ -176,9 +196,27 @@ class InstallGatewayActivity : Activity() {
         when (status) {
             PackageInstaller.STATUS_SUCCESS -> {
                 finished = true
-                Toast.makeText(this, "Clone installed${if (packageName != null) " ($packageName)" else ""}", Toast.LENGTH_LONG).show()
-                setResult(RESULT_OK)
-                finish()
+                val expectedSplits = expectedSplitNames
+                val installedSplits = packageName?.let {
+                    PackageInstallerManager(this).installedSplitNames(it)
+                }.orEmpty()
+                val missing = expectedSplits.filterNot { it in installedSplits }
+                Log.i(TAG, "installed=${packageName ?: "?"} expectedSplits=$expectedSplits installedSplits=$installedSplits")
+                if (missing.isNotEmpty()) {
+                    showFailure(
+                        "The app installed, but these parts are missing: ${missing.joinToString()}.\n\n" +
+                            "A clone that is missing parts closes right after its first screen. Re-clone the app " +
+                            "and install it with \"Install now\" again (do not install the base APK by hand)."
+                    )
+                } else {
+                    Toast.makeText(
+                        this,
+                        "Clone installed${if (packageName != null) " ($packageName)" else ""}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    setResult(RESULT_OK)
+                    finish()
+                }
             }
             else -> {
                 val readable = when (status) {

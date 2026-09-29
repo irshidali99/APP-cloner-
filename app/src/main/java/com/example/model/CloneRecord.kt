@@ -28,7 +28,9 @@ data class CloneRecord(
     /** Signature schemes found in the generated APK, e.g. "v1+v2". */
     val signatureScheme: String = "",
     /** SHA-256 fingerprint of the certificate that signed this clone. */
-    val certificateFingerprint: String = ""
+    val certificateFingerprint: String = "",
+    /** Split names of a bundle clone (empty for single APK clones). */
+    val splitNames: String = ""
 ) {
     val isInstalled: Boolean
         get() = installStatus == STATUS_INSTALLED

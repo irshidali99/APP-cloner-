@@ -152,7 +152,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             val clonesForApp = cloneRepository.getClonesForSource(installedApp.packageName).first()
-            val nextCloneIndex = clonesForApp.size + 1
+            // Take both the saved history and what is really installed into account, otherwise a deleted
+            // record would hand out a package name that is still occupied by an installed clone.
+            val usedIndexes = (
+                clonesForApp.mapNotNull { record ->
+                    CloneConfig.cloneIndexSuffix(record.clonePackageId, installedApp.packageName)
+                } + packageInspector.installedCloneIndexes(installedApp.packageName)
+                ).toSet()
+            val nextCloneIndex = (usedIndexes.maxOrNull() ?: 0) + 1
             val currentSettings = settings.value
 
             val defaultName = CloneConfig.generateDefaultCloneName(
@@ -234,7 +241,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     invertColors = config.invertColors,
                     isVerified = outcome.isVerified,
                     signatureScheme = signatureSchemeOf(outcome),
-                    certificateFingerprint = outcome.certificateFingerprint
+                    certificateFingerprint = outcome.certificateFingerprint,
+                    splitNames = outcome.splitNames.joinToString(", ")
                 )
                 val id = cloneRepository.saveClone(newRecord)
                 val savedRecord = newRecord.copy(id = id)
