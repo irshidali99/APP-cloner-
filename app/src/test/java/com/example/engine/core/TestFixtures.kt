@@ -75,9 +75,10 @@ object TestFixtures {
 
         addNode(namespaceNode(start = true, "android", ANDROID_NAMESPACE))
         val manifestAttributes = ArrayList<ByteArray>()
-        manifestAttributes.add(attribute(null, "package", TYPE_STRING, index(ORIGINAL_PACKAGE)))
+        manifestAttributes.add(attribute(null, "package", TYPE_STRING, index(ORIGINAL_PACKAGE), strings))
         if (splitName != null) {
-            manifestAttributes.add(attribute(null, "split", TYPE_STRING, index(splitName)))
+            // the split attribute lives in the extended pool of this manifest
+            manifestAttributes.add(attribute(null, "split", TYPE_STRING, index(splitName), strings))
         }
         addNode(startElement("manifest", manifestAttributes))
         addNode(
@@ -298,10 +299,17 @@ object TestFixtures {
         return writer.toByteArray()
     }
 
-    private fun attribute(namespace: String?, name: String, valueType: Int, value: Int): ByteArray {
+    private fun attribute(
+        namespace: String?,
+        name: String,
+        valueType: Int,
+        value: Int,
+        strings: List<String> = manifestStrings
+    ): ByteArray {
+        fun poolIndex(value: String): Int = strings.indexOf(value)
         val writer = LeWriter(20)
-        writer.u32(if (namespace == null) -1 else stringIndex(namespace))
-        writer.u32(stringIndex(name))
+        writer.u32(if (namespace == null) -1 else poolIndex(namespace))
+        writer.u32(poolIndex(name))
         writer.u32(if (valueType == TYPE_STRING) value else -1)
         writer.u16(8)
         writer.u8(0)
