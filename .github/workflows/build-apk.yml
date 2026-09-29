@@ -153,6 +153,26 @@ jobs:
             "$BUILD_TOOLS/zipalign" -c -v 4 "$APK" >/dev/null 2>&1 && echo "zipalign 4: OK" || echo "zipalign 4: FAILED";
           } | tee -a verify.txt
 
+      - name: Assert the APK uses the stable test signing key
+        if: steps.build.outcome == 'success'
+        run: |
+          BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
+          APK_CERT=$("$BUILD_TOOLS/apksigner" verify --print-certs "$APK" | grep -m1 -i "certificate SHA-256 digest" | awk '{print $NF}' | tr -d ':' | tr 'A-F' 'a-f')
+          KEY_CERT=$("$JAVA_HOME/bin/keytool" -list -v -keystore ci/test-signing.jks -storepass android -alias androiddebugkey | grep -m1 "SHA256:" | awk '{print $2}' | tr -d ':' | tr 'A-F' 'a-f')
+          echo "apk certificate  : $APK_CERT"
+          echo "store certificate: $KEY_CERT"
+          {
+            echo "--- stable signing key check ---"
+            echo "apk certificate  : $APK_CERT"
+            echo "store certificate: $KEY_CERT"
+          } >> verify.txt
+          if [ -z "$APK_CERT" ] || [ "$APK_CERT" != "$KEY_CERT" ]; then
+            echo "::error title=Signing key mismatch::the APK is not signed with ci/test-signing.jks and could not be installed over the previous build"
+            exit 1
+          fi
+          echo "::notice title=Signing key::APK is signed with the committed test key, updates will install over earlier builds"
+
       - name: Collect APK
         if: always()
         run: |
