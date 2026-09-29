@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.installer.InstallGatewayActivity
 import com.example.installer.PackageInstallerManager
 import java.io.File
 
@@ -117,24 +118,25 @@ fun InstallHandoffDialog(
             if (hasPermission) {
                 Button(
                     onClick = {
-                        if (apkFile.exists()) {
-                            if (parts.size > 1) {
-                                packageInstallerManager.startBundleInstall(parts)
-                                    .onSuccess { onDismiss() }
-                                    .onFailure { error ->
-                                        installError = error.message ?: error::class.java.simpleName
-                                    }
-                            } else {
-                                onDismiss()
-                                context.startActivity(packageInstallerManager.createInstallIntent(apkFile))
-                            }
-                        } else {
+                        if (!apkFile.exists()) {
                             installError = "the generated APK is no longer on the device"
+                            return@Button
+                        }
+                        onDismiss()
+                        // A visible activity drives the installer session: Android hands the confirmation
+                        // dialog back to the app, and starting it from the background is blocked on
+                        // Android 10+, which is why the install appeared to vanish.
+                        runCatching {
+                            context.startActivity(
+                                InstallGatewayActivity.intent(context, apkFile, cloneName)
+                            )
+                        }.onFailure { error ->
+                            installError = error.message ?: error::class.java.simpleName
                         }
                     },
                     modifier = Modifier.testTag("proceed_install_button")
                 ) {
-                    Text("Continue to Installer")
+                    Text(if (parts.size > 1) "Install bundle" else "Install now")
                 }
             } else {
                 Button(

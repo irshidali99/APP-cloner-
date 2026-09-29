@@ -55,6 +55,20 @@ android {
   }
 
   signingConfigs {
+    // CI signs debug builds with a committed *test* key. Without it every CI run would generate a fresh
+    // random debug key, so a new build could not be installed over the previous one on a phone
+    // (INSTALL_FAILED_UPDATE_INCOMPATIBLE / "App not installed"). This key is for test APKs only and is
+    // never used for anything published to a store.
+    val testSigningKey = rootProject.file("ci/test-signing.jks")
+    if (testSigningKey.exists()) {
+      create("ciTest") {
+        storeFile = testSigningKey
+        storePassword = "android"
+        keyAlias = "androiddebugkey"
+        keyPassword = "android"
+      }
+    }
+
     if (hasReleaseSigning) {
       create("release") {
         storeFile = rootProject.file(releaseStoreFile!!)
@@ -75,8 +89,12 @@ android {
       }
     }
     debug {
-      // Debug builds use AGP's own debug keystore; nothing has to be committed for them to work.
       applicationIdSuffix = ".debug"
+      // Prefer the stable test key so builds can be installed on top of each other; otherwise AGP's own
+      // debug keystore is used (fine for local development).
+      if (rootProject.file("ci/test-signing.jks").exists()) {
+        signingConfig = signingConfigs.getByName("ciTest")
+      }
     }
   }
   compileOptions {

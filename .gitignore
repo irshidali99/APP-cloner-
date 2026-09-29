@@ -19,6 +19,8 @@ debug.keystore
 
 # Signing material must never be committed
 *.jks
+# The CI test key is deliberately tracked: it only signs the test APK built by GitHub Actions.
+!ci/test-signing.jks
 *.keystore
 keystore.properties
 key.properties

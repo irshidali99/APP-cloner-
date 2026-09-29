@@ -1,11 +1,12 @@
 package com.example.installer
 
-import android.app.PendingIntent
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInstaller
 import android.net.Uri
 import android.os.Build
+import android.content.IntentSender
 import android.provider.Settings
 import android.util.Log
 import androidx.core.content.FileProvider
@@ -74,13 +75,17 @@ class PackageInstallerManager(private val context: Context) {
     }
 
     /**
-     * Installs a clone that consists of several APKs (an app bundle) as one multi APK session.
+     * Writes every APK of a clone into one package installer session and commits it.
      *
-     * Android only accepts split apps when every part is written into a single session - that is exactly how
-     * the Play Store installs bundles. The system shows its own confirmation dialog and reports back through
-     * [InstallResultReceiver].
+     * Android installs a split app only when all of its parts are handed over inside a single session -
+     * that is exactly how the Play Store installs app bundles.
+     *
+     * @param statusSender where the installer reports back to (see [InstallGatewayActivity], which keeps a
+     *   foreground receiver so the confirmation dialog can always be shown).
+     * @return the session id, or `-1` when the session could not be created.
      */
-    fun startBundleInstall(apkFiles: List<File>): Result<Unit> {
+    @SuppressLint("MissingPermission")
+    fun createSession(apkFiles: List<File>, statusSender: IntentSender): Int {
         require(apkFiles.isNotEmpty()) { "no APK to install" }
         return try {
             val installer = context.packageManager.packageInstaller
@@ -94,28 +99,15 @@ class PackageInstallerManager(private val context: Context) {
                         session.fsync(output)
                     }
                 }
-
-                val resultIntent = Intent(context, InstallResultReceiver::class.java).apply {
-                    action = InstallResultReceiver.ACTION_INSTALL_RESULT
-                    putExtra(InstallResultReceiver.EXTRA_PART_COUNT, apkFiles.size)
-                }
-                var flags = PendingIntent.FLAG_UPDATE_CURRENT
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    flags = flags or PendingIntent.FLAG_MUTABLE
-                }
-                val pendingIntent = PendingIntent.getBroadcast(context, sessionId, resultIntent, flags)
-                session.commit(pendingIntent.intentSender)
+                session.commit(statusSender)
             }
-            Log.i(TAG, "bundle install session created with ${apkFiles.size} parts")
-            Result.success(Unit)
+            lastError = null
+            Log.i(TAG, "install session $sessionId created with ${apkFiles.size} part(s)")
+            sessionId
         } catch (error: Exception) {
-            Log.e(TAG, "bundle install failed", error)
-            runCatching {
-                // Abandon the session so a retry does not run into stale state.
-                val installer = context.packageManager.packageInstaller
-                installer.mySessions.forEach { if (it.isActive) installer.abandonSession(it.sessionId) }
-            }
-            Result.failure(error)
+            lastError = error.message ?: error::class.java.simpleName
+            Log.e(TAG, "install session failed", error)
+            -1
         }
     }
 
@@ -164,8 +156,13 @@ class PackageInstallerManager(private val context: Context) {
         }
     }
 
-    private companion object {
-        const val TAG = "PackageInstaller"
+    companion object {
+        private const val TAG = "PackageInstaller"
         const val PARTS_FILE = "parts.txt"
+
+        /** Message of the last failed installer call, shown to the user instead of failing silently. */
+        @Volatile
+        var lastError: String? = null
+            private set
     }
 }

@@ -30,11 +30,10 @@ class InstallResultReceiver : BroadcastReceiver() {
         Log.i(TAG, "install result: status=$status package=$packageName message=$statusMessage")
 
         if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
-            // Android hands the confirmation step back to us; it must be launched from an activity context.
-            val confirmation = confirmationIntent(intent) ?: return
-            confirmation.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            runCatching { context.startActivity(confirmation) }
-                .onFailure { Log.e(TAG, "could not show the installer confirmation", it) }
+            // The confirmation is shown by InstallGatewayActivity, which is visible while the session runs.
+            // Starting an activity from here would be blocked in the background on Android 10+ (and the
+            // installation would appear to vanish), so this receiver only records final statuses.
+            Log.i(TAG, "user confirmation requested; handled by the install gateway activity")
             return
         }
 
