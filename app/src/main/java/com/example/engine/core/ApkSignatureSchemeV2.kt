@@ -92,8 +92,10 @@ object ApkSignatureSchemeV2 {
         }
         val signedData = lengthPrefixed(signedDataContent)
 
+        // "length-prefixed sequence of length-prefixed signatures", each record being
+        // `signature algorithm ID (uint32)` + length prefixed signature over the signed data
         val signatures = sequence(
-            concat(le32(ALGORITHM_RSA_PKCS1_SHA256), lengthPrefixed(signature))
+            lengthPrefixed(concat(le32(ALGORITHM_RSA_PKCS1_SHA256), lengthPrefixed(signature)))
         )
         // A signer is the three length prefixed fields above, itself length prefixed; the v2 block value is
         // that sequence of signers wrapped once more (matches AOSP's `encodeAsSequenceOfLengthPrefixedElements`).
@@ -175,7 +177,7 @@ object ApkSignatureSchemeV2 {
                 // 1. signature over signedData
                 var algorithm = 0
                 var signatureBytes: ByteArray? = null
-                for ((entryAlgorithm, entrySignature) in readAlgorithmValuePairs(signaturesBlock)) {
+                for ((entryAlgorithm, entrySignature) in readAlgorithmValueRecords(signaturesBlock)) {
                     algorithm = entryAlgorithm
                     signatureBytes = entrySignature
                 }
@@ -204,7 +206,7 @@ object ApkSignatureSchemeV2 {
                 val digestsBlock = signedDataReader.nextElement()
                 val certificatesBlock = signedDataReader.nextElement()
 
-                for ((digestAlgorithm, digestValue) in readAlgorithmValuePairs(digestsBlock)) {
+                for ((digestAlgorithm, digestValue) in readAlgorithmValueRecords(digestsBlock)) {
                     expectedDigests[digestAlgorithm] = digestValue
                 }
 
@@ -339,7 +341,10 @@ object ApkSignatureSchemeV2 {
         contentDigest: ByteArray,
         certificateDer: ByteArray
     ): ByteArray = concat(
-        sequence(concat(le32(algorithm), lengthPrefixed(contentDigest))),
+        // "length-prefixed sequence of length-prefixed digests", each digest being
+        // `signature algorithm ID (uint32)` + length prefixed digest
+        sequence(lengthPrefixed(concat(le32(algorithm), lengthPrefixed(contentDigest)))),
+        // "length-prefixed sequence of X.509 certificates", each certificate length prefixed
         sequence(lengthPrefixed(certificateDer)),
         sequence() // additional attributes (none)
     )
@@ -382,13 +387,14 @@ object ApkSignatureSchemeV2 {
     }
 
     /**
-     * Parses a block made of `uint32 algorithm ID` followed by a length prefixed value, repeated until the
-     * block is exhausted. Both `digests` and `signatures` use this shape.
+     * Parses the `digests` / `signatures` field: a sequence of length prefixed records, where each record
+     * holds a `uint32` algorithm ID followed by a length prefixed value (AOSP: "length-prefixed sequence of
+     * length-prefixed digests/signatures").
      */
-    private fun readAlgorithmValuePairs(block: ByteArray): List<Pair<Int, ByteArray>> {
-        val reader = LengthPrefixedReader(block)
+    private fun readAlgorithmValueRecords(block: ByteArray): List<Pair<Int, ByteArray>> {
         val result = ArrayList<Pair<Int, ByteArray>>()
-        while (reader.hasRemaining()) {
+        for (record in readLengthPrefixedList(block)) {
+            val reader = LengthPrefixedReader(record)
             val algorithm = reader.nextU32()
             result.add(algorithm to reader.nextElement())
         }

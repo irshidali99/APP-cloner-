@@ -181,11 +181,14 @@ class ClonePipelineTest {
         assertEquals(newPackage, cloneReport.first)
         assertEquals(newPackage, cloneReport.second)
 
-        // the split keeps its payload, only its identity changed
+        // the split keeps its payload and gets its own v1 signature, the old one is dropped
         val splitArchive = ZipArchive(report.splitFiles.single())
         try {
             assertNotNull(splitArchive.findEntry("assets/config.en.bin"))
-            assertTrue(splitArchive.entries.none { it.name.startsWith("META-INF/") })
+            assertTrue(splitArchive.entries.none { it.name == "META-INF/OLD.SF" })
+            assertNotNull(splitArchive.findEntry("META-INF/MANIFEST.MF"))
+            assertNotNull(splitArchive.findEntry("META-INF/CERT.SF"))
+            assertNotNull(splitArchive.findEntry("META-INF/CERT.RSA"))
         } finally {
             splitArchive.close()
         }

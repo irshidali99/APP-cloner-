@@ -106,10 +106,12 @@ class AppClonerLogicTest {
             splitSourceDirs = listOf("/data/app/split_config.arm64_v8a.apk", "/data/app/split_config.xxhdpi.apk")
         )
         val report = CompatibilityReport.evaluate(splitApp)
-        assertFalse(report.isSupported)
+        // App bundles are supported: every part is cloned and installed as one bundle.
+        assertTrue(report.isSupported)
         assertTrue(report.splitApkDetected)
         assertFalse(report.systemAppProtected)
-        assertTrue(report.signatureRestrictionsNote.contains("Split APKs"))
+        assertTrue(report.formatDescription.contains("bundle"))
+        assertTrue(report.signatureRestrictionsNote.contains("splits"))
     }
 
     @Test

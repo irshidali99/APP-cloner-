@@ -58,6 +58,9 @@ class JarV1Signer(
         val sf = StringBuilder()
         appendLine(sf, "Signature-Version", "1.0")
         appendLine(sf, "Created-By", "App Cloner")
+        // Rollback protection required by the APK signature scheme v2 spec: a v1 signed APK that is also
+        // v2 signed must announce it, otherwise an attacker could strip the v2 signature.
+        appendLine(sf, "X-Android-APK-Signed", "2")
         digest.reset()
         appendLine(sf, "SHA-256-Digest-Manifest", base64(digest.digest(manifestBytes)))
         sf.append("\r\n")
