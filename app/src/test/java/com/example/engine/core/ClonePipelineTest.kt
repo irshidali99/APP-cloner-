@@ -139,6 +139,21 @@ class ClonePipelineTest {
             val label = editor.findAttribute(application, TestFixtures.ANDROID_NAMESPACE, "label")!!
             assertEquals(newLabel, editor.string(label.rawValue))
 
+            // the app's own permission moved to the new package (INSTALL_FAILED_DUPLICATE_PERMISSION)
+            val expectedPermission = "$newPackage.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+            assertEquals(listOf(TestFixtures.PERMISSION_NAME), report.renamedPermissions)
+            val permission = editor.startElements().first { editor.elementName(it) == "permission" }
+            val permissionName = editor.findAttribute(permission, TestFixtures.ANDROID_NAMESPACE, "name")!!
+            assertEquals(expectedPermission, editor.string(permissionName.rawValue))
+
+            val usesPermission = editor.startElements().first { editor.elementName(it) == "uses-permission" }
+            val usesName = editor.findAttribute(usesPermission, TestFixtures.ANDROID_NAMESPACE, "name")!!
+            assertEquals(expectedPermission, editor.string(usesName.rawValue))
+
+            // sharedUserId follows the package so the clone does not fight with the original install
+            val sharedUserId = editor.findAttribute(root, TestFixtures.ANDROID_NAMESPACE, "sharedUserId")!!
+            assertEquals(newPackage, editor.string(sharedUserId.rawValue))
+
             // the injected icon really replaced the launcher bitmap
             val iconBytes = archive.readEntry(archive.findEntry(TestFixtures.ICON_PATH)!!)
             assertEquals(700, iconBytes.size)

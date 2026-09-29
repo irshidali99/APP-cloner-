@@ -8,7 +8,9 @@ data class ManifestRewriteReport(
     val qualifiedComponents: Int,
     val authoritiesChanged: Int,
     val attributesChanged: Int,
-    val foreignAuthorities: List<String>
+    val foreignAuthorities: List<String>,
+    /** Permissions owned by the original app that were re-targeted to the new package. */
+    val renamedPermissions: List<String> = emptyList()
 )
 
 /**
@@ -72,6 +74,12 @@ object ManifestRewriter {
             )
         }
 
+        // Permissions this app declares for itself (for example the
+        // "<package>.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" that recent build tools add) must move to the
+        // new package, otherwise the install fails with INSTALL_FAILED_DUPLICATE_PERMISSION because another
+        // installed package already owns that permission.
+        val renamedPermissions = LinkedHashSet<String>()
+
         for (element in editor.startElements()) {
             val elementName = editor.elementName(element) ?: continue
 
@@ -102,19 +110,26 @@ object ManifestRewriter {
                     continue
                 }
 
-                // declared permissions keep their identity so the app's own permission checks still work
-                if (noNamespace && attributeName == "name" &&
-                    elementName in ManifestRules.DECLARED_PERMISSION_ELEMENTS
+                // permissions owned by this app are renamed together with the package: a permission name is
+                // globally unique, so declaring "<original>.SOME_PERMISSION" from a second package fails
+                if ((android || noNamespace) && attributeName == "name" &&
+                    (elementName in ManifestRules.DECLARED_PERMISSION_ELEMENTS ||
+                        elementName in ManifestRules.CONSUMED_PERMISSION_ELEMENTS)
                 ) {
+                    val current = editor.string(attribute.rawValue) ?: continue
+                    val rewritten = ManifestRules.rewritePackagePrefix(current, originalPackage, newPackage)
+                    if (rewritten != null && rewritten != current) {
+                        editor.setStringAttribute(attribute, rewritten)
+                        renamedPermissions.add(current)
+                        attributesChanged++
+                    }
                     continue
                 }
 
                 // class names that resolve relative to the manifest package
                 if ((android || noNamespace) && attributeName == "name" &&
-                    (elementName in ManifestRules.CLASS_NAME_ELEMENTS ||
-                        elementName in ManifestRules.CONSUMED_PERMISSION_ELEMENTS)
+                    elementName in ManifestRules.CLASS_NAME_ELEMENTS
                 ) {
-                    if (elementName in ManifestRules.CONSUMED_PERMISSION_ELEMENTS) continue
                     val current = editor.string(attribute.rawValue) ?: continue
                     if (ManifestRules.needsQualification(current)) {
                         editor.setStringAttribute(
@@ -122,6 +137,16 @@ object ManifestRewriter {
                             ManifestRules.qualifyClassName(current, originalPackage)
                         )
                         qualifiedComponents++
+                        attributesChanged++
+                    }
+                    continue
+                }
+
+                if (android && attributeName == "targetPackage") {
+                    val current = editor.string(attribute.rawValue) ?: continue
+                    val rewritten = ManifestRules.rewritePackagePrefix(current, originalPackage, newPackage)
+                    if (rewritten != null && rewritten != current) {
+                        editor.setStringAttribute(attribute, rewritten)
                         attributesChanged++
                     }
                     continue
@@ -167,7 +192,8 @@ object ManifestRewriter {
             qualifiedComponents = qualifiedComponents,
             authoritiesChanged = authoritiesChanged,
             attributesChanged = attributesChanged,
-            foreignAuthorities = foreignAuthorities
+            foreignAuthorities = foreignAuthorities,
+            renamedPermissions = renamedPermissions.toList()
         )
     }
 }

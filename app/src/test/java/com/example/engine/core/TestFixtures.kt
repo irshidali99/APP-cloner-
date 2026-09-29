@@ -22,11 +22,15 @@ object TestFixtures {
     const val PROVIDER_AUTHORITY = "com.original.game.provider"
     const val ICON_PATH = "res/mipmap-hdpi-v4/ic_launcher.png"
 
+    /** The kind of permission modern build tools add to every app; it must move with the package. */
+    const val PERMISSION_NAME = "$ORIGINAL_PACKAGE.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+
     private const val ATTR_NAME = 0x01010003
     private const val ATTR_LABEL = 0x01010001
     private const val ATTR_ICON = 0x01010002
     private const val ATTR_EXPORTED = 0x01010010
     private const val ATTR_AUTHORITIES = 0x01010018
+    private const val ATTR_SHARED_USER_ID = 0x0101000b
 
     private const val TYPE_STRING = 0x03
     private const val TYPE_REFERENCE = 0x01
@@ -37,7 +41,8 @@ object TestFixtures {
         "name", "label", "icon", "exported", "authorities", "package",
         "android", ANDROID_NAMESPACE,
         "manifest", "application", "provider", "activity",
-        ORIGINAL_PACKAGE, ".DataProvider", PROVIDER_AUTHORITY, ".MainActivity", ORIGINAL_LABEL
+        ORIGINAL_PACKAGE, ".DataProvider", PROVIDER_AUTHORITY, ".MainActivity", ORIGINAL_LABEL,
+        "permission", "uses-permission", "sharedUserId", PERMISSION_NAME
     )
 
     private fun stringIndex(value: String): Int = manifestStrings.indexOf(value)
@@ -61,7 +66,9 @@ object TestFixtures {
         val writer = LeWriter(2048)
         val pool = buildStringPool(strings, utf8 = true)
 
-        val resourceMap = intArrayOf(ATTR_NAME, ATTR_LABEL, ATTR_ICON, ATTR_EXPORTED, ATTR_AUTHORITIES)
+        val resourceMap = intArrayOf(
+            ATTR_NAME, ATTR_LABEL, ATTR_ICON, ATTR_EXPORTED, ATTR_AUTHORITIES, ATTR_SHARED_USER_ID
+        )
         val resourceMapSize = CHUNK_HEADER_SIZE + resourceMap.size * 4
 
         // ---- nodes ---------------------------------------------------------------------------
@@ -76,11 +83,33 @@ object TestFixtures {
         addNode(namespaceNode(start = true, "android", ANDROID_NAMESPACE))
         val manifestAttributes = ArrayList<ByteArray>()
         manifestAttributes.add(attribute(null, "package", TYPE_STRING, index(ORIGINAL_PACKAGE), strings))
+        // a shared user id derived from the package, exactly like many real apps declare it
+        manifestAttributes.add(
+            attribute(ANDROID_NAMESPACE, "sharedUserId", TYPE_STRING, index(ORIGINAL_PACKAGE), strings)
+        )
         if (splitName != null) {
             // the split attribute lives in the extended pool of this manifest
             manifestAttributes.add(attribute(null, "split", TYPE_STRING, index(splitName), strings))
         }
         addNode(startElement("manifest", manifestAttributes))
+        addNode(
+            startElement(
+                "permission",
+                listOf(
+                    attribute(ANDROID_NAMESPACE, "name", TYPE_STRING, index(PERMISSION_NAME), strings)
+                )
+            )
+        )
+        addNode(endElement("permission"))
+        addNode(
+            startElement(
+                "uses-permission",
+                listOf(
+                    attribute(ANDROID_NAMESPACE, "name", TYPE_STRING, index(PERMISSION_NAME), strings)
+                )
+            )
+        )
+        addNode(endElement("uses-permission"))
         addNode(
             startElement(
                 "application",

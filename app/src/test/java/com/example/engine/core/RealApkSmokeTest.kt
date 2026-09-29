@@ -22,6 +22,40 @@ class RealApkSmokeTest {
 
     private val newPackage = "com.example.clone.smoke"
 
+    /**
+     * Attributes that belong to this app and must therefore not still point at the original package
+     * (a leftover permission name makes the install fail with INSTALL_FAILED_DUPLICATE_PERMISSION).
+     */
+    private fun leftoverReferences(apk: File, originalPackage: String): List<String> {
+        ZipArchive(apk).use { archive ->
+            val manifestEntry = archive.findEntry(ApkTransformer.MANIFEST) ?: return emptyList()
+            val editor = AxmlEditor.parse(archive.readEntry(manifestEntry))
+            val leftovers = ArrayList<String>()
+            for (element in editor.startElements()) {
+                val elementName = editor.elementName(element) ?: continue
+                for (attribute in element.attributes) {
+                    val attributeName = editor.attributeName(attribute) ?: continue
+                    val owned = when {
+                        attributeName == "authorities" -> true
+                        attributeName == "sharedUserId" -> true
+                        attributeName == "targetPackage" -> true
+                        attributeName == "name" && elementName in setOf(
+                            "permission", "uses-permission", "uses-permission-sdk-23",
+                            "permission-group", "permission-tree"
+                        ) -> true
+                        else -> false
+                    }
+                    if (!owned) continue
+                    val value = editor.string(attribute.rawValue) ?: continue
+                    if (value == originalPackage || value.startsWith("$originalPackage.")) {
+                        leftovers.add("$elementName/$attributeName=$value")
+                    }
+                }
+            }
+            return leftovers
+        }
+    }
+
     @Test
     fun `clones a real world apk when one is configured`() {
         val sourcePath = System.getenv("CLONE_SMOKE_APK") ?: return
@@ -50,6 +84,18 @@ class RealApkSmokeTest {
         }
 
         report("source=${source.name} size=${source.length()} splits=${splitPaths.size}")
+
+        // Remember the original identity so the clone can be checked for leftovers afterwards.
+        val originalPackage = ZipArchive(source).use { archive ->
+            archive.findEntry(ApkTransformer.MANIFEST)?.let { entry ->
+                val editor = AxmlEditor.parse(archive.readEntry(entry))
+                val root = editor.startElements().firstOrNull { editor.elementName(it) == "manifest" }
+                root?.let { element ->
+                    editor.findAttribute(element, null, "package")?.let { editor.string(it.rawValue) }
+                }
+            }
+        }
+        report("originalPackage=${originalPackage ?: "?"}")
 
         val parts: List<File>
         val baseReport: CloneReport
@@ -103,6 +149,15 @@ class RealApkSmokeTest {
 
             assertEquals("manifest package of ${part.name}", newPackage, identity.first)
             assertTrue("v2 signature of ${part.name}: ${verification.detail}", verification.isValid)
+
+            if (originalPackage != null) {
+                val leftovers = leftoverReferences(part, originalPackage)
+                report("leftovers=${leftovers.size}${if (leftovers.isEmpty()) "" else " -> " + leftovers.joinToString()}")
+                assertTrue(
+                    "clone still references the original package in owned names: $leftovers",
+                    leftovers.isEmpty()
+                )
+            }
         }
 
         report("cloneReady=${parts.size} apk(s), total=${parts.sumOf { it.length() }} bytes")

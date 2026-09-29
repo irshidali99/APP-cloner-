@@ -62,7 +62,9 @@ data class CloneReport(
     val warnings: List<String>,
     val role: CloneRole = CloneRole.BASE,
     /** Value of the `split` attribute for split APKs, `null` for the base. */
-    val splitName: String? = null
+    val splitName: String? = null,
+    /** Permissions owned by the original app that were re-targeted to the new package name. */
+    val renamedPermissions: List<String> = emptyList()
 )
 
 /** An app bundle to clone: the base APK plus every configuration/feature split. */
@@ -264,7 +266,8 @@ object ApkTransformer {
                 foreignAuthorities = rewriteReport.foreignAuthorities,
                 warnings = warnings,
                 role = role,
-                splitName = readSplitName(editor)
+                splitName = readSplitName(editor),
+                renamedPermissions = rewriteReport.renamedPermissions
             )
         } finally {
             archive.close()
