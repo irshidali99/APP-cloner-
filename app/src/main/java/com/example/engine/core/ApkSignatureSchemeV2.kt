@@ -298,6 +298,17 @@ object ApkSignatureSchemeV2 {
     // Content digest
     // ---------------------------------------------------------------------------------------------
 
+    /**
+     * Digest of the APK contents covered by APK Signature Scheme v2 (sections 1, 3 and 4).
+     *
+     * Per the spec each section is split into 1 MiB chunks and every chunk is hashed as
+     * `0xa5 || uint32(chunk length) || chunk contents`. The top level digest is computed over
+     * `0x5a || uint32(chunk count) || concatenation of the chunk digests`.
+     *
+     * While hashing the ZIP End of Central Directory, the field holding the central directory offset is
+     * treated as containing the offset of the APK signing block, so the digest stays the same whether or not
+     * the signing block is present in the file.
+     */
     fun contentDigest(
         file: File,
         blockStart: Long,
@@ -306,32 +317,75 @@ object ApkSignatureSchemeV2 {
         originalCentralDirectoryOffset: Long,
         algorithm: String = "SHA-256"
     ): ByteArray {
-        val digest = MessageDigest.getInstance(algorithm)
-        var chunks = 0
+        val chunkDigests = ArrayList<ByteArray>()
+        val chunkDigest = MessageDigest.getInstance(algorithm)
 
         RandomAccessFile(file, "r").use { ra ->
-            chunks += digestRange(digest, ra, 0, blockStart)
-            chunks += digestRange(digest, ra, blockEnd, endOfCentralDirectoryOffset - blockEnd)
+            digestFileSection(chunkDigest, chunkDigests, ra, 0, blockStart)
+            digestFileSection(
+                chunkDigest, chunkDigests, ra,
+                blockEnd, endOfCentralDirectoryOffset - blockEnd
+            )
 
             val eocdLength = (file.length() - endOfCentralDirectoryOffset).toInt()
             val eocd = ByteArray(eocdLength)
             ra.seek(endOfCentralDirectoryOffset)
             ra.readFully(eocd)
             writeU32(eocd, 16, originalCentralDirectoryOffset)
-
-            var position = 0
-            while (position < eocd.size) {
-                val take = minOf(CHUNK_SIZE, eocd.size - position)
-                digest.update(CHUNK_PREFIX.toByte())
-                digest.update(eocd, position, take)
-                chunks++
-                position += take
-            }
+            digestBytes(chunkDigest, chunkDigests, eocd, 0, eocd.size)
         }
 
-        digest.update(CHUNK_TERMINATOR.toByte())
-        digest.update(le32(chunks))
-        return digest.digest()
+        val topLevel = MessageDigest.getInstance(algorithm)
+        topLevel.update(CHUNK_TERMINATOR.toByte())
+        topLevel.update(le32(chunkDigests.size))
+        for (chunk in chunkDigests) topLevel.update(chunk)
+        return topLevel.digest()
+    }
+
+    /** Splits `[start, start + size)` of [ra] into chunks and records each chunk digest. */
+    private fun digestFileSection(
+        digest: MessageDigest,
+        chunkDigests: MutableList<ByteArray>,
+        ra: RandomAccessFile,
+        start: Long,
+        size: Long
+    ) {
+        if (size <= 0) return
+        ra.seek(start)
+        val buffer = ByteArray(CHUNK_SIZE)
+        var remaining = size
+        while (remaining > 0) {
+            val toRead = minOf(CHUNK_SIZE.toLong(), remaining).toInt()
+            var filled = 0
+            while (filled < toRead) {
+                val read = ra.read(buffer, filled, toRead - filled)
+                if (read < 0) throw IllegalStateException("unexpected end of file while hashing")
+                filled += read
+            }
+            digestBytes(digest, chunkDigests, buffer, 0, toRead)
+            remaining -= toRead
+        }
+    }
+
+    /** Hashes `[offset, offset + length)` of [bytes] in 1 MiB chunks and stores each chunk digest. */
+    private fun digestBytes(
+        digest: MessageDigest,
+        chunkDigests: MutableList<ByteArray>,
+        bytes: ByteArray,
+        offset: Int,
+        length: Int
+    ) {
+        var position = offset
+        val end = offset + length
+        while (position < end) {
+            val take = minOf(CHUNK_SIZE, end - position)
+            digest.reset()
+            digest.update(CHUNK_PREFIX.toByte())
+            digest.update(le32(take))
+            digest.update(bytes, position, take)
+            chunkDigests.add(digest.digest())
+            position += take
+        }
     }
 
     // ---------------------------------------------------------------------------------------------
