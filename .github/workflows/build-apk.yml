@@ -89,17 +89,33 @@ jobs:
       - name: Verify the engine's clone of the real app with apksigner
         if: always()
         run: |
+          BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           {
             echo "--- smoke report ---"
             cat smoke/output/smoke-report.txt 2>/dev/null || echo "no smoke report"
-            BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
-            for CLONE in $(ls smoke/output/*.apk 2>/dev/null); do
-              echo "--- apksigner verify: $CLONE ---"
-              "$BUILD_TOOLS/apksigner" verify --print-certs "$CLONE" 2>&1 | head -8
-              "$BUILD_TOOLS/aapt" dump badging "$CLONE" 2>/dev/null | grep -E "^package" | head -2
-            done
           } | tee -a verify.txt
-          echo "::notice title=Real APK smoke::$(grep -E 'SMOKE|source=|part=|verifies|Verified using|^package|no smoke' verify.txt | tail -10 | tr '\n' '~')"
+
+          ENGINE_OUTPUT_REJECTED=0
+          for CLONE in $(ls smoke/output/*.apk 2>/dev/null); do
+            {
+              echo "--- apksigner verify: $CLONE ---"
+            } | tee -a verify.txt
+            "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$CLONE" 2>&1 | tee -a verify.txt
+            "$BUILD_TOOLS/aapt" dump badging "$CLONE" 2>/dev/null | grep -E "^package" | head -2 | tee -a verify.txt
+            if grep -q "DOES NOT VERIFY" verify.txt; then ENGINE_OUTPUT_REJECTED=1; fi
+          done
+
+          if [ -f smoke/output/smoke-report.txt ]; then
+            echo "::notice title=Real APK smoke::$(grep -E 'SMOKE|source=|part=|Verifies|Verified using v2' verify.txt | tail -8 | tr '\n' '~')"
+          else
+            echo "::warning title=Real APK smoke::no real APK could be cloned in this run"
+          fi
+
+          # Hard gate: an APK the engine produced that apksigner rejects would not install on a phone.
+          if [ "$ENGINE_OUTPUT_REJECTED" = "1" ]; then
+            echo "::error title=Engine output rejected by apksigner::the engine's own clone does not verify - see verify.txt"
+            exit 1
+          fi
 
       - name: Check that Room and the engine made it into the APK
         if: steps.build.outcome == 'success'
