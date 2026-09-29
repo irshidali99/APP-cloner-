@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageInstaller
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -17,6 +18,7 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import com.example.engine.core.ApkTransformer
 import java.io.File
 
 /**
@@ -81,7 +83,48 @@ class InstallGatewayActivity : Activity() {
             }
         }
 
+        // A clone with the same package name may already be installed (for example from an earlier
+        // attempt). Android then answers with "App not installed as package conflicts with an existing
+        // package"; saying so up front and offering to uninstall is far more useful.
+        val targetPackage = runCatching { ApkTransformer.readPackageIdentity(baseApk).first }.getOrNull()
+        if (targetPackage != null && isInstalled(targetPackage)) {
+            promptUninstall(targetPackage)
+            return
+        }
+
         startSession(parts, cloneName)
+    }
+
+    private fun isInstalled(packageName: String): Boolean = try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packageManager.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.getPackageInfo(packageName, 0)
+        }
+        true
+    } catch (notFound: PackageManager.NameNotFoundException) {
+        false
+    }
+
+    /** Offers to remove the clone that is already installed so the new APK can take its place. */
+    private fun promptUninstall(packageName: String) {
+        AlertDialog.Builder(this)
+            .setTitle("Already installed")
+            .setMessage(
+                "A clone with the package name\n\n$packageName\n\nis already installed on this device.\n\n" +
+                    "Android refuses to install a second copy with the same package name. Uninstall the old " +
+                    "clone first, then tap Install again."
+            )
+            .setPositiveButton("Uninstall old clone") { _, _ ->
+                runCatching {
+                    startActivity(PackageInstallerManager(this).createUninstallIntent(packageName))
+                }
+                finish()
+            }
+            .setNegativeButton("Cancel") { _, _ -> finish() }
+            .setCancelable(false)
+            .show()
     }
 
     private fun startSession(parts: List<File>, cloneName: String) {

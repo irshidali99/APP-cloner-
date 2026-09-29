@@ -114,7 +114,7 @@ jobs:
           done
 
           if [ -f smoke/output/smoke-report.txt ]; then
-            echo "::notice title=Real APK smoke::$(grep -E 'SMOKE|source=|part=|Verifies|Verified using v2' verify.txt | tail -8 | tr '\n' '~')"
+            echo "::notice title=Real APK smoke::$(grep -E 'SMOKE|source=|originalPackage=|part=|leftovers=|Verifies|Verified using v2' verify.txt | tail -10 | tr '\n' '~')"
           else
             echo "::warning title=Real APK smoke::no real APK could be cloned in this run"
           fi
