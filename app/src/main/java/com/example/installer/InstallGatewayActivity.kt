@@ -61,9 +61,13 @@ class InstallGatewayActivity : Activity() {
 
         val manager = PackageInstallerManager(this)
         val parts = manager.partsOf(baseApk)
+        queueTotal = intent.getIntExtra(EXTRA_QUEUE_TOTAL, 0)
         statusView = TextView(this).apply {
             text = buildString {
                 append("Preparing to install $cloneName\n")
+                if (queueTotal > 1) {
+                    append("Batch: clone ${queueTotal - pendingNames.size} of $queueTotal\n")
+                }
                 append("${parts.size} APK part(s)\n\n")
                 append("Google Play Protect may warn about this app because the clone is signed with a new\n")
                 append("certificate instead of the original developer's key. That warning is expected for clones:\n")
@@ -148,6 +152,7 @@ class InstallGatewayActivity : Activity() {
     }
 
     private var expectedSplitNames: List<String> = emptyList()
+    private var queueTotal: Int = 0
     private var pendingNames: ArrayList<String> = ArrayList()
     private var pendingPaths: ArrayList<String> = ArrayList()
 
@@ -272,6 +277,29 @@ class InstallGatewayActivity : Activity() {
                             "or share the base APK by itself."
                     )
                 } else {
+                    // A cloned game needs the expansion files of the original under its own package name.
+                    var obbNote = ""
+                    val installedPackage = packageName ?: targetPackageName
+                    if (installedPackage.isNotEmpty()) {
+                        val hasObb = com.example.engine.ObbSupport.hasObb(installedPackage)
+                        if (!hasObb) {
+                            val sourcePackage = ApkTransformer.readPackageIdentity(baseApk).first
+                            val sourceObb = sourcePackage?.let { com.example.engine.ObbSupport.hasObb(it) } == true
+                            if (sourceObb) {
+                                val copied = com.example.engine.ObbSupport.copyObbToClone(
+                                    sourcePackage!!, installedPackage
+                                )
+                                obbNote = when {
+                                    copied > 0 -> "\n\nExpansion files copied: $copied"
+                                    copied == 0 -> "\n\nNo expansion files found to copy."
+                                    else -> "\n\nExpansion files could not be copied: " +
+                                        "grant App Cloner \"All files access\" and use \"Copy game data\" " +
+                                        "on the clone's details screen."
+                                }
+                            }
+                        }
+                    }
+
                     val nextName = pendingNames.firstOrNull()
                     val nextPath = pendingPaths.firstOrNull()
                     if (nextName != null && nextPath != null) {
@@ -281,14 +309,17 @@ class InstallGatewayActivity : Activity() {
                         val next = Intent(this, InstallGatewayActivity::class.java).apply {
                             putExtra(EXTRA_APK_PATH, nextPath)
                             putExtra(EXTRA_CLONE_NAME, nextName)
+                            putExtra(EXTRA_CLONE_NAME, nextName)
                             putStringArrayListExtra(EXTRA_QUEUE_NAMES, pendingNames)
                             putStringArrayListExtra(EXTRA_QUEUE_PATHS, pendingPaths)
+                            putExtra(EXTRA_QUEUE_TOTAL, queueTotal)
                         }
                         startActivity(next)
                     } else {
                         Toast.makeText(
                             this,
-                            "Clone installed${if (packageName != null) " ($packageName)" else ""}",
+                            "Clone installed${if (packageName != null) " ($packageName)" else ""}" +
+                                obbNote.replace("\n\n", " - "),
                             Toast.LENGTH_LONG
                         ).show()
                     }
@@ -374,6 +405,7 @@ class InstallGatewayActivity : Activity() {
         const val EXTRA_CLONE_NAME = "clone_name"
         const val EXTRA_QUEUE_NAMES = "queue_names"
         const val EXTRA_QUEUE_PATHS = "queue_paths"
+        const val EXTRA_QUEUE_TOTAL = "queue_total"
 
         /** Intent that runs the whole install flow in this activity. */
         fun intent(context: Context, apkFile: File, cloneName: String): Intent =
@@ -398,6 +430,7 @@ class InstallGatewayActivity : Activity() {
                 putExtra(EXTRA_CLONE_NAME, first.first)
                 putStringArrayListExtra(EXTRA_QUEUE_NAMES, names)
                 putStringArrayListExtra(EXTRA_QUEUE_PATHS, paths)
+                putExtra(EXTRA_QUEUE_TOTAL, queue.size + 1)
             }
         }
     }

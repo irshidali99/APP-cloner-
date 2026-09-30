@@ -9,6 +9,7 @@ import com.example.model.ClonePreset
 import com.example.model.CloneRecord
 import com.example.model.CompatibilityReport
 import com.example.model.InstalledApp
+import com.example.model.KnownIssues
 import com.example.model.PipelineProgress
 import com.example.model.PipelineStage
 import org.junit.Assert.assertEquals
@@ -239,6 +240,34 @@ class AppClonerLogicTest {
             sourcePackage = "com.app.demo"
         )
         assertEquals(1, index)
+    }
+
+    @Test
+    fun testKnownIssuesDatabaseExplainsProblematicApps() {
+        val whatsApp = KnownIssues.describe("com.whatsapp", "WhatsApp")
+        assertNotNull(whatsApp)
+        assertTrue(whatsApp!!.contains("WhatsApp"))
+        assertTrue(whatsApp.contains("signature"))
+
+        val snapchat = KnownIssues.describe("com.snapchat.android", "Snapchat")
+        assertNotNull(snapchat)
+        assertNull(KnownIssues.describe("org.fdroid.fdroid", "F-Droid"))
+        assertTrue(KnownIssues.entryCount > 10)
+    }
+
+    @Test
+    fun testCompatibilityReportCarriesTheKnownIssue() {
+        val viber = InstalledApp(
+            packageName = "com.viber.voip",
+            label = "Viber",
+            versionName = "1.0",
+            versionCode = 1L,
+            isSystemApp = false,
+            sourceDir = "/data/app/base.apk"
+        )
+        val report = CompatibilityReport.evaluate(viber)
+        assertNotNull(report.knownIssue)
+        assertTrue(report.knownIssue!!.contains("Viber"))
     }
 
     // ------------------------------------------------------------------ presets

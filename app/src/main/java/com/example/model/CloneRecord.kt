@@ -32,7 +32,9 @@ data class CloneRecord(
     /** Split names of a bundle clone (empty for single APK clones). */
     val splitNames: String = "",
     /** Human readable list of the clone mods that were applied to this clone. */
-    val modsSummary: String = ""
+    val modsSummary: String = "",
+    /** Expansion (.obb) files of the original app, comma separated (empty when there are none). */
+    val obbFiles: String = ""
 ) {
     val isInstalled: Boolean
         get() = installStatus == STATUS_INSTALLED

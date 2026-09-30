@@ -17,7 +17,9 @@ data class CompatibilityReport(
      */
     val selfVerifyingApp: Boolean = false,
     /** What to use instead when [selfVerifyingApp] is true. */
-    val alternativeRecommendation: String? = null
+    val alternativeRecommendation: String? = null,
+    /** Explanation from the known issue database, `null` for apps without a known problem. */
+    val knownIssue: String? = null
 ) {
     companion object {
 
@@ -75,6 +77,7 @@ data class CompatibilityReport(
 
             val selfVerifying = isSelfVerifying(app.packageName)
             val alternativeNotice = if (selfVerifying) selfVerifyingNotice(app.label) else null
+            val knownIssue = KnownIssues.describe(app.packageName, app.label)
 
             if (app.isSplitApk) {
                 return CompatibilityReport(
@@ -95,7 +98,8 @@ data class CompatibilityReport(
                         "Proceed with clone configuration and use the in-app installer to install the whole bundle."
                     },
                     selfVerifyingApp = selfVerifying,
-                    alternativeRecommendation = alternativeNotice
+                    alternativeRecommendation = alternativeNotice,
+                    knownIssue = knownIssue
                 )
             }
 
@@ -117,7 +121,8 @@ data class CompatibilityReport(
                     "Proceed with clone configuration."
                 },
                 selfVerifyingApp = selfVerifying,
-                alternativeRecommendation = alternativeNotice
+                alternativeRecommendation = alternativeNotice,
+                knownIssue = knownIssue
             )
         }
     }

@@ -2,6 +2,7 @@ package com.example.ui.screens
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.Intent
 import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
@@ -309,6 +310,68 @@ fun CloneDetailsScreen(
                         }
                     }
 
+                    // Games keep their assets in expansion files; the clone needs them under its own name.
+                    if (record.obbFiles.isNotBlank()) {
+                        val needsCopy = viewModel.needsObbCopy(record)
+                        val canAccess = viewModel.canAccessObb()
+                        Card(
+                            shape = RoundedCornerShape(10.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFF0F9FF)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("obb_card")
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(
+                                    text = "Game data (expansion files)",
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = Color(0xFF0C4A6E)
+                                )
+                                Text(
+                                    text = if (needsCopy) {
+                                        "This app stores assets outside the APK: " + record.obbFiles +
+                                            ". The clone needs its own copy, otherwise it closes right " +
+                                            "after its first screen."
+                                    } else {
+                                        "Expansion files are in place for this clone: " + record.obbFiles
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color(0xFF0C4A6E)
+                                )
+                                if (needsCopy) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Button(
+                                            onClick = {
+                                                viewModel.copyObb(record) { copied ->
+                                                    Toast.makeText(
+                                                        context,
+                                                        when {
+                                                            copied > 0 -> "Copied $copied file(s)"
+                                                            copied == 0 -> "No source files found"
+                                                            else -> "Grant \"All files access\" first"
+                                                        },
+                                                        Toast.LENGTH_LONG
+                                                    ).show()
+                                                }
+                                            },
+                                            modifier = Modifier.testTag("obb_copy_button")
+                                        ) {
+                                            Text(if (canAccess) "Copy game data" else "Try copy")
+                                        }
+                                        OutlinedButton(
+                                            onClick = { context.startActivity(viewModel.obbPermissionIntent()) },
+                                            modifier = Modifier.testTag("obb_permission_button")
+                                        ) {
+                                            Text("Allow all files access")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     if (CompatibilityReport.isSelfVerifying(record.sourcePackage)) {
                         Card(
                             shape = RoundedCornerShape(10.dp),
@@ -442,6 +505,45 @@ fun CloneDetailsScreen(
                         Icon(imageVector = Icons.Default.Info, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Copy Diagnostics")
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            // Puts the diagnostics on the clipboard and opens a pre-filled issue, so a
+                            // report can be sent without copying anything by hand.
+                            val report = buildString {
+                                append("App: ").append(record.sourceAppName)
+                                append(" (").append(record.sourcePackage).append(")\n")
+                                append("Clone: ").append(record.cloneName).append('\n')
+                                append("Package: ").append(record.clonePackageId).append('\n')
+                                append("Android: SDK ").append(android.os.Build.VERSION.SDK_INT)
+                                append(" (").append(android.os.Build.MANUFACTURER).append(' ')
+                                append(android.os.Build.MODEL).append(")\n")
+                                append("Mods: ").append(record.modsSummary.ifBlank { "none" }).append('\n')
+                                append("Splits: ").append(record.splitNames.ifBlank { "none" }).append('\n')
+                                lastAttempt?.let { attempt ->
+                                    append('\n').append(attempt.describe())
+                                }
+                            }
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newPlainText("App Cloner report", report))
+                            Toast.makeText(context, "Diagnostics copied - paste them into the report", Toast.LENGTH_LONG).show()
+                            val url = "https://github.com/irshidali99/APP-cloner-/issues/new?title=" +
+                                java.net.URLEncoder.encode(
+                                    "Clone issue: " + record.sourceAppName + " (" + record.clonePackageId + ")",
+                                    "UTF-8"
+                                )
+                            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))) }
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("details_report_issue_button")
+                    ) {
+                        Icon(imageVector = Icons.Default.Info, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Report App Issue")
                     }
 
                     OutlinedButton(

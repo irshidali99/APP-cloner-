@@ -135,6 +135,16 @@ class CloneApkBuilder(
             val totalBytes = sourceApk.length() + readableSplits.sumOf { it.length() }
             log("Total source size: ${totalBytes / 1024} KB")
 
+            // Apps that ship their assets as expansion files cannot run without them: the files live in
+            // /sdcard/Android/obb/<package> and have to exist for the clone's package name as well.
+            val obbFiles = com.example.engine.ObbSupport.obbFiles(sourceApp.packageName)
+            if (obbFiles.isNotEmpty()) {
+                log(
+                    "Expansion files found: ${obbFiles.size} file(s), " +
+                        "${obbFiles.sumOf { it.length() } / (1024 * 1024)} MB"
+                )
+            }
+
             val archive = ZipArchive(sourceApk)
             val hasManifest: Boolean
             val hasResourceTable: Boolean
@@ -356,7 +366,8 @@ class CloneApkBuilder(
                 durationMillis = System.currentTimeMillis() - startedAt,
                 bundleParts = outputParts,
                 splitNames = parts.filter { it.isSplit }.mapNotNull { it.splitName },
-                signatureSchemes = schemes
+                signatureSchemes = schemes,
+                obbFiles = obbFiles
             )
 
             unsignedDirectory.deleteRecursively()

@@ -35,6 +35,10 @@ data class ClonePreset(
     val removePermissionGroups: String = "",
     /** Appended to the clone's version name, for example `-clone`. */
     val versionNameSuffix: String = "",
+    val removeWidgets: Boolean = false,
+    val noHistory: Boolean = false,
+    val largeHeap: Boolean = false,
+    val testOnly: Boolean = false,
     val createdAt: Long = System.currentTimeMillis()
 ) {
 
@@ -50,7 +54,11 @@ data class ClonePreset(
         multiWindow = multiWindow,
         pictureInPicture = pictureInPicture,
         kioskMode = kioskMode,
-        removePermissionGroups = permissionGroups()
+        removePermissionGroups = permissionGroups(),
+        removeWidgets = removeWidgets,
+        noHistory = noHistory,
+        largeHeap = largeHeap,
+        testOnly = testOnly
     )
 
     fun permissionGroups(): Set<String> =
@@ -88,6 +96,10 @@ data class ClonePreset(
         pictureInPicture = mods.pictureInPicture,
         kioskMode = mods.kioskMode,
         removePermissionGroups = mods.removePermissionGroups.sorted().joinToString(","),
+        removeWidgets = mods.removeWidgets,
+        noHistory = mods.noHistory,
+        largeHeap = mods.largeHeap,
+        testOnly = mods.testOnly,
         versionNameSuffix = versionNameSuffix
     )
 
@@ -103,6 +115,10 @@ data class ClonePreset(
         if (multiWindow) mods.add("multi window")
         if (pictureInPicture) mods.add("PiP")
         if (kioskMode) mods.add("kiosk")
+        if (removeWidgets) mods.add("no widgets")
+        if (noHistory) mods.add("no history")
+        if (largeHeap) mods.add("large heap")
+        if (testOnly) mods.add("test only")
         val groups = permissionGroups()
         if (groups.isNotEmpty()) mods.add("no ${groups.sorted().joinToString("/")}")
         return if (mods.isEmpty()) "no mods" else mods.joinToString(", ")

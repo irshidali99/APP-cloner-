@@ -32,7 +32,15 @@ data class CloneMods(
     /** Declares lock task (kiosk) mode for the clone's activities. */
     val kioskMode: Boolean = false,
     /** Permission groups that are removed from the clone's manifest. */
-    val removePermissionGroups: Set<String> = emptySet()
+    val removePermissionGroups: Set<String> = emptySet(),
+    /** Removes widget providers: the clone cannot offer home screen widgets any more. */
+    val removeWidgets: Boolean = false,
+    /** Activities finish themselves instead of staying in the back stack. */
+    val noHistory: Boolean = false,
+    /** Asks the platform for a bigger heap - helps with clones of memory hungry apps. */
+    val largeHeap: Boolean = false,
+    /** Declares the clone as a test-only build (it can be uninstalled by the shell without confirmation). */
+    val testOnly: Boolean = false
 ) {
 
     /** True when no mod is selected, so the manifest can be left untouched. */
@@ -40,7 +48,8 @@ data class CloneMods(
         get() = versionName == null && versionCode == null && minSdk == null && targetSdk == null &&
             !hideLauncherIcon && !excludeFromRecents && !installToSdCard && !disableBackup &&
             !disableCleartextTraffic && !lockRotation && !multiWindow && !pictureInPicture &&
-            !kioskMode && removePermissionGroups.isEmpty()
+            !kioskMode && removePermissionGroups.isEmpty() && !removeWidgets && !noHistory &&
+            !largeHeap && !testOnly
 }
 
 /**

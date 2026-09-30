@@ -49,6 +49,7 @@ object TestFixtures {
         "permission", "uses-permission", "sharedUserId", PERMISSION_NAME,
         "uses-sdk", "versionCode", "versionName", "minSdkVersion", "targetSdkVersion",
         "intent-filter", "action", "category", "priority",
+        ".WidgetProvider", "android.appwidget.action.APPWIDGET_UPDATE",
         "android.intent.action.MAIN", "android.intent.category.LAUNCHER", DANGEROUS_PERMISSION
     )
 
@@ -154,6 +155,32 @@ object TestFixtures {
             )
         )
         addNode(endElement("provider"))
+        addNode(
+            startElement(
+                "receiver",
+                listOf(attribute(ANDROID_NAMESPACE, "name", TYPE_STRING, index(".WidgetProvider"), strings))
+            )
+        )
+        addNode(
+            startElement(
+                "intent-filter",
+                listOf(attribute(ANDROID_NAMESPACE, "label", TYPE_STRING, index(ORIGINAL_LABEL), strings))
+            )
+        )
+        addNode(
+            startElement(
+                "action",
+                listOf(
+                    attribute(
+                        ANDROID_NAMESPACE, "name", TYPE_STRING,
+                        index("android.appwidget.action.APPWIDGET_UPDATE"), strings
+                    )
+                )
+            )
+        )
+        addNode(endElement("action"))
+        addNode(endElement("intent-filter"))
+        addNode(endElement("receiver"))
         addNode(
             startElement(
                 "activity",

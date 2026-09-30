@@ -5,6 +5,18 @@
     <!-- Permission required to request package installation via system installer -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!-- Needed to read the expansion (.obb) files of an app and place them for its clone; asked for
+         inside the app only when a cloned app really has expansion files. -->
+    <uses-permission
+        android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29" />
+
     <!-- Google Play policy compliant declaration to query installed launcher apps -->
     <queries>
         <intent>

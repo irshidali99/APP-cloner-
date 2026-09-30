@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.example.model.SettingsData
@@ -21,6 +22,7 @@ class PreferencesRepository(private val context: Context) {
         val DEFAULT_SUFFIX = stringPreferencesKey("default_suffix")
         val AUTO_NUMBER = booleanPreferencesKey("auto_number")
         val CONFIRM_DELETE = booleanPreferencesKey("confirm_delete")
+        val MAX_CLONES = intPreferencesKey("max_clones")
     }
 
     val settingsData: Flow<SettingsData> = context.dataStore.data.map { prefs ->
@@ -35,7 +37,8 @@ class PreferencesRepository(private val context: Context) {
             themeMode = themeMode,
             defaultSuffix = prefs[PreferencesKeys.DEFAULT_SUFFIX] ?: "Clone",
             autoNumber = prefs[PreferencesKeys.AUTO_NUMBER] ?: true,
-            confirmDelete = prefs[PreferencesKeys.CONFIRM_DELETE] ?: true
+            confirmDelete = prefs[PreferencesKeys.CONFIRM_DELETE] ?: true,
+            maxClones = prefs[PreferencesKeys.MAX_CLONES] ?: 0
         )
     }
 
@@ -55,6 +58,10 @@ class PreferencesRepository(private val context: Context) {
         context.dataStore.edit { prefs ->
             prefs[PreferencesKeys.AUTO_NUMBER] = enabled
         }
+    }
+
+    suspend fun setMaxClones(max: Int) {
+        context.dataStore.edit { prefs -> prefs[PreferencesKeys.MAX_CLONES] = max }
     }
 
     suspend fun setConfirmDelete(enabled: Boolean) {

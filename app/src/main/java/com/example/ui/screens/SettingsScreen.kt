@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -29,6 +30,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -251,6 +253,57 @@ fun SettingsScreen(
                             Text("Clean Cache", fontSize = 12.sp)
                         }
                     }
+
+                    val clones by viewModel.clonesList.collectAsStateWithLifecycle()
+                    val currentSettings by viewModel.settings.collectAsStateWithLifecycle()
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                    Text(
+                        text = "Usage & limits",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "${clones.size} clone(s) created, " +
+                            "${clones.count { it.isInstalled }} installed on this device. " +
+                            "Clones with the most copies: " +
+                            (clones.groupBy { it.sourceAppName }
+                                .entries.sortedByDescending { it.value.size }
+                                .take(3)
+                                .joinToString { "${it.key} (${it.value.size})" }
+                                .ifBlank { "none yet" }) + ".",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "Clone limit: " + if (currentSettings.maxClones == 0) {
+                            "unlimited"
+                        } else {
+                            "${currentSettings.maxClones} (warning when reached)"
+                        },
+                        fontWeight = FontWeight.Medium
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        for (limit in listOf(0, 5, 10, 20, 50)) {
+                            FilterChip(
+                                selected = currentSettings.maxClones == limit,
+                                onClick = { viewModel.updateMaxClones(limit) },
+                                label = { Text(if (limit == 0) "Unlimited" else "$limit") },
+                                modifier = Modifier.testTag("clone_limit_$limit")
+                            )
+                        }
+                    }
+                    Text(
+                        text = "The limit is a safety net, not a hard block: it warns on the setup screen " +
+                            "when the next clone would exceed it.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
 

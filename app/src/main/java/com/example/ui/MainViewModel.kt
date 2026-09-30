@@ -20,7 +20,9 @@ import com.example.model.PipelineStage
 import com.example.model.SettingsData
 import com.example.model.ThemeMode
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -45,6 +47,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val packageInspector = app.packageInspector
     private val cloneApkBuilder = app.cloneApkBuilder
     val installerManager = app.installerManager
+
+    // ------------------------------------------------------------------ expansion files (games) --------
+
+    /** True when the clone has expansion files that still have to be placed for its package name. */
+    fun needsObbCopy(record: CloneRecord): Boolean =
+        record.obbFiles.isNotBlank() && com.example.engine.ObbSupport.obbFiles(record.clonePackageId).isEmpty()
+
+    /** True when this app may read and write the shared obb directory. */
+    fun canAccessObb(): Boolean = com.example.engine.ObbSupport.canAccessObb(getApplication())
+
+    /** Settings screen where "All files access" is granted. */
+    fun obbPermissionIntent(): Intent = com.example.engine.ObbSupport.manageAccessIntent(getApplication())
+
+    /** Copies the expansion files of the original app to the clone's package directory. */
+    fun copyObb(record: CloneRecord, onResult: (Int) -> Unit) {
+        viewModelScope.launch {
+            val copied = withContext(Dispatchers.IO) {
+                com.example.engine.ObbSupport.copyObbToClone(record.sourcePackage, record.clonePackageId)
+            }
+            onResult(copied)
+        }
+    }
 
     /** Splits Android reports for an installed clone (empty for single APK clones or when not installed). */
     fun installedSplitNames(packageId: String): List<String> =
@@ -509,7 +533,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     signatureScheme = signatureSchemeOf(outcome),
                     certificateFingerprint = outcome.certificateFingerprint,
                     splitNames = outcome.splitNames.joinToString(", "),
-                    modsSummary = outcome.report.appliedMods.joinToString(", ")
+                    modsSummary = outcome.report.appliedMods.joinToString(", "),
+                    obbFiles = outcome.obbFiles.joinToString(", ") { it.name }
                 )
                 val id = cloneRepository.saveClone(newRecord)
                 val savedRecord = newRecord.copy(id = id)
@@ -576,6 +601,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             preferencesRepository.setConfirmDelete(enabled)
         }
     }
+
+    fun updateMaxClones(max: Int) {
+        viewModelScope.launch {
+            preferencesRepository.setMaxClones(max)
+        }
+    }
+
+    /** True when the configured clone limit is reached, so no new clone should be started. */
+    val cloneLimitReached: StateFlow<Boolean> = combine(clonesList, settings) { clones, current ->
+        current.maxClones > 0 && clones.size >= current.maxClones
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = false
+    )
 
     fun onResume() {
         viewModelScope.launch {

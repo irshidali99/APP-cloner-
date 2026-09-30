@@ -279,6 +279,61 @@ fun CloneSetupScreen(
                 }
             }
 
+            // Known problems of this app (certificate checks, Play services, integrity checks).
+            compatibility?.takeIf { !it.selfVerifyingApp && it.knownIssue != null }?.let { report ->
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFBEB)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("known_issue_card")
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = null,
+                                tint = Color(0xFFB45309),
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Known problem with this app",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = Color(0xFF7C2D12)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = report.knownIssue.orEmpty(),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF7C2D12)
+                        )
+                    }
+                }
+            }
+
+            // Clone limit warning (set in Settings > Usage & limits).
+            val limitReached by viewModel.cloneLimitReached.collectAsStateWithLifecycle()
+            if (limitReached) {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFEF2F2)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("clone_limit_warning")
+                ) {
+                    Text(
+                        text = "You reached your clone limit. Delete a clone or raise the limit in " +
+                            "Settings > Storage Management > Usage & limits.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF7F1D1D),
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
+            }
+
             // ------------------------------------------------ Presets (saved clone setups)
             val presets by viewModel.presets.collectAsStateWithLifecycle()
             val activePreset by viewModel.activePresetName.collectAsStateWithLifecycle()
@@ -473,6 +528,26 @@ fun CloneSetupScreen(
                         subtitle = "Declares PiP support for the clone",
                         checked = mods.pictureInPicture
                     ) { value -> viewModel.updateMods { it.copy(pictureInPicture = value) } }
+                    ModSwitch(
+                        title = "Remove widgets",
+                        subtitle = "The clone offers no home screen widgets",
+                        checked = mods.removeWidgets
+                    ) { value -> viewModel.updateMods { it.copy(removeWidgets = value) } }
+                    ModSwitch(
+                        title = "No history / no back stack",
+                        subtitle = "Activities finish themselves when left",
+                        checked = mods.noHistory
+                    ) { value -> viewModel.updateMods { it.copy(noHistory = value) } }
+                    ModSwitch(
+                        title = "Large heap",
+                        subtitle = "Ask for a bigger memory heap (heavy apps)",
+                        checked = mods.largeHeap
+                    ) { value -> viewModel.updateMods { it.copy(largeHeap = value) } }
+                    ModSwitch(
+                        title = "Test only build",
+                        subtitle = "Marked as testOnly in the manifest",
+                        checked = mods.testOnly
+                    ) { value -> viewModel.updateMods { it.copy(testOnly = value) } }
                     ModSwitch(
                         title = "Kiosk mode",
                         subtitle = "Lock task mode (needs device owner to be enforced)",

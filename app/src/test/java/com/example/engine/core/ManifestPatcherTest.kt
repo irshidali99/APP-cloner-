@@ -151,6 +151,25 @@ class ManifestPatcherTest {
     }
 
     @Test
+    fun widgetProvidersAreRemoved() {
+        val editor = patchWith(CloneMods(removeWidgets = true))
+        val receivers = editor.startElements().filter { editor.elementName(it) == "receiver" }
+        assertTrue("widget receiver was not removed: ${receivers.size} left", receivers.isEmpty())
+    }
+
+    @Test
+    fun extraApplicationAndActivityModsAreWritten() {
+        val mods = CloneMods(noHistory = true, largeHeap = true, testOnly = true)
+        check("extras", mods) { editor ->
+            val application = element(editor, "application")
+            val activity = element(editor, "activity")
+            assertEquals(-1, value(editor, application, "largeHeap"))
+            assertEquals(-1, value(editor, application, "testOnly"))
+            assertEquals(-1, value(editor, activity, "noHistory"))
+        }
+    }
+
+    @Test
     fun modsAreReportedForTheCloneDetails() {
         val editor = AxmlEditor.parse(TestFixtures.manifestBytes())
         val applied = ManifestPatcher.apply(

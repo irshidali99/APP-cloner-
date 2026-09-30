@@ -107,12 +107,21 @@ object ManifestPatcher {
                 )
                 applied.add("picture in picture enabled")
             }
+            if (mods.largeHeap) {
+                setInt(editor, application, "largeHeap", android.R.attr.largeHeap, ResValueType.INT_BOOLEAN, BOOLEAN_TRUE)
+                applied.add("large heap")
+            }
+            if (mods.testOnly) {
+                setInt(editor, application, "testOnly", android.R.attr.testOnly, ResValueType.INT_BOOLEAN, BOOLEAN_TRUE)
+                applied.add("test only build")
+            }
         }
 
         // ------------------------------------------------------------------ activities (base only)
         var excluded = 0
         var locked = 0
         var kiosk = 0
+        var noHistory = 0
         for (element in elements) {
             val name = editor.elementName(element)
             if (name != "activity" && name != "activity-alias") continue
@@ -137,10 +146,24 @@ object ManifestPatcher {
                 )
                 kiosk++
             }
+            if (mods.noHistory) {
+                setInt(editor, element, "noHistory", android.R.attr.noHistory, ResValueType.INT_BOOLEAN, BOOLEAN_TRUE)
+                noHistory++
+            }
         }
         if (excluded > 0) applied.add("hidden from recent apps ($excluded)")
         if (locked > 0) applied.add("portrait locked ($locked)")
         if (kiosk > 0) applied.add("kiosk mode ($kiosk)")
+        if (noHistory > 0) applied.add("no history ($noHistory)")
+
+        // ------------------------------------------------------------------ widgets (base only)
+        if (mods.removeWidgets) {
+            val widgets = elements.filter { element ->
+                editor.elementName(element) == "receiver" && declaresAppWidget(editor, element)
+            }
+            widgets.forEach { editor.removeElement(it) }
+            if (widgets.isNotEmpty()) applied.add("widgets removed (${widgets.size})")
+        }
 
         // ------------------------------------------------------------------ permissions (base only)
         if (mods.removePermissionGroups.isNotEmpty()) {
@@ -178,6 +201,34 @@ object ManifestPatcher {
         }
 
         return applied
+    }
+
+    /** True when the receiver is a home screen widget provider (`android.appwidget.action.APPWIDGET_UPDATE`). */
+    private fun declaresAppWidget(editor: AxmlEditor, receiver: AxmlNode.StartElement): Boolean {
+        val nodes = editor.nodes
+        val start = nodes.indexOf(receiver)
+        if (start < 0) return false
+        var depth = 0
+        var index = start
+        while (index < nodes.size) {
+            when (val node = nodes[index]) {
+                is AxmlNode.StartElement -> {
+                    depth++
+                    if (node !== receiver && editor.elementName(node) == "action") {
+                        val value = editor.findAttribute(node, ManifestRules.ANDROID_NAMESPACE, "name")
+                            ?.let { editor.string(it.rawValue) }
+                        if (value == "android.appwidget.action.APPWIDGET_UPDATE") return true
+                    }
+                }
+                is AxmlNode.EndElement -> {
+                    depth--
+                    if (depth == 0) return false
+                }
+                else -> Unit
+            }
+            index++
+        }
+        return false
     }
 
     /** True when the intent filter contains both `MAIN` and `LAUNCHER`, which makes an app launchable. */

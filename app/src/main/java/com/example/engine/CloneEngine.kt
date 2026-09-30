@@ -25,8 +25,12 @@ data class CloneOutcome(
     /** Names of the configuration/feature splits that were cloned. */
     val splitNames: List<String> = emptyList(),
     /** Signature schemes verified on the parts, e.g. `v1+v2`. */
-    val signatureSchemes: String = ""
+    val signatureSchemes: String = "",
+    /** Expansion (.obb) files of the original app - a clone of a game needs them under its own package. */
+    val obbFiles: List<File> = emptyList()
 ) {
+    /** True when the source app keeps game assets in expansion files. */
+    val hasObb: Boolean get() = obbFiles.isNotEmpty()
     val isBundle: Boolean get() = bundleParts.size > 1
 
     /** True only when the signature verifies *and* both package identities match the requested one. */
