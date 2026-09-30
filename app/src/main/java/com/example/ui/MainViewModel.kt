@@ -467,6 +467,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _batchProgress.value = _batchProgress.value.copy(items = items)
     }
 
+    /**
+     * True when an installed clone has no launcher entry of its own. A clone with a hidden launcher icon
+     * can only be started from this app, so offering a pinned home screen shortcut keeps it reachable.
+     */
+    fun cloneNeedsShortcut(record: CloneRecord): Boolean {
+        if (!record.isInstalled) return false
+        if (!record.modsSummary.contains("launcher icon hidden")) return false
+        val manager = getApplication<Application>().packageManager
+        val launcher = runCatching { manager.getLaunchIntentForPackage(record.clonePackageId) }.getOrNull()
+        return launcher == null
+    }
+
+    /** Asks the launcher to pin a shortcut for an installed clone. */
+    fun pinCloneShortcut(record: CloneRecord): Boolean = runCatching {
+        com.example.installer.CloneShortcut.requestPin(
+            getApplication(),
+            record.clonePackageId,
+            record.cloneName
+        )
+    }.getOrDefault(false)
+
     /** Queue of clones to install one after another. */
     fun installQueueOfReadyClones(): List<com.example.installer.InstallQueueEntry> =
         _batchProgress.value.installable.map { item ->

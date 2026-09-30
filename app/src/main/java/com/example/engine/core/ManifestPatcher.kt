@@ -115,6 +115,13 @@ object ManifestPatcher {
                 setInt(editor, application, "testOnly", android.R.attr.testOnly, ResValueType.INT_BOOLEAN, BOOLEAN_TRUE)
                 applied.add("test only build")
             }
+            if (mods.extractNativeLibs) {
+                setInt(
+                    editor, application, "extractNativeLibs", android.R.attr.extractNativeLibs,
+                    ResValueType.INT_BOOLEAN, BOOLEAN_TRUE
+                )
+                applied.add("native libs extracted at install")
+            }
         }
 
         // ------------------------------------------------------------------ activities (base only)

@@ -549,6 +549,11 @@ fun CloneSetupScreen(
                         checked = mods.testOnly
                     ) { value -> viewModel.updateMods { it.copy(testOnly = value) } }
                     ModSwitch(
+                        title = "Extract native libs",
+                        subtitle = "Fix for clones that stop right after starting (extractNativeLibs)",
+                        checked = mods.extractNativeLibs
+                    ) { value -> viewModel.updateMods { it.copy(extractNativeLibs = value) } }
+                    ModSwitch(
                         title = "Kiosk mode",
                         subtitle = "Lock task mode (needs device owner to be enforced)",
                         checked = mods.kioskMode

@@ -372,6 +372,51 @@ fun CloneDetailsScreen(
                         }
                     }
 
+                    // A stealth clone hides its launcher icon, so a pinned shortcut is the only way to start
+                    // it from the home screen.
+                    if (viewModel.cloneNeedsShortcut(record)) {
+                        Card(
+                            shape = RoundedCornerShape(10.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFF5F3FF)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("shortcut_card")
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(
+                                    text = "Launcher icon is hidden",
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = Color(0xFF4C1D95)
+                                )
+                                Text(
+                                    text = "This clone has no icon in the app drawer. Start it from App Cloner, " +
+                                        "or pin a shortcut to reach it from the home screen.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color(0xFF4C1D95)
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Button(
+                                    onClick = {
+                                        val pinned = viewModel.pinCloneShortcut(record)
+                                        Toast.makeText(
+                                            context,
+                                            if (pinned) {
+                                                "Shortcut requested - confirm it on your home screen"
+                                            } else {
+                                                "Your launcher does not support pinned shortcuts"
+                                            },
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    },
+                                    modifier = Modifier.testTag("details_pin_shortcut_button")
+                                ) {
+                                    Text("Pin home screen shortcut")
+                                }
+                            }
+                        }
+                    }
+
                     if (CompatibilityReport.isSelfVerifying(record.sourcePackage)) {
                         Card(
                             shape = RoundedCornerShape(10.dp),

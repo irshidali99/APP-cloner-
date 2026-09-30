@@ -39,6 +39,7 @@ data class ClonePreset(
     val noHistory: Boolean = false,
     val largeHeap: Boolean = false,
     val testOnly: Boolean = false,
+    val extractNativeLibs: Boolean = false,
     val createdAt: Long = System.currentTimeMillis()
 ) {
 
@@ -58,7 +59,8 @@ data class ClonePreset(
         removeWidgets = removeWidgets,
         noHistory = noHistory,
         largeHeap = largeHeap,
-        testOnly = testOnly
+        testOnly = testOnly,
+        extractNativeLibs = extractNativeLibs
     )
 
     fun permissionGroups(): Set<String> =
@@ -100,6 +102,7 @@ data class ClonePreset(
         noHistory = mods.noHistory,
         largeHeap = mods.largeHeap,
         testOnly = mods.testOnly,
+        extractNativeLibs = mods.extractNativeLibs,
         versionNameSuffix = versionNameSuffix
     )
 
@@ -119,6 +122,7 @@ data class ClonePreset(
         if (noHistory) mods.add("no history")
         if (largeHeap) mods.add("large heap")
         if (testOnly) mods.add("test only")
+        if (extractNativeLibs) mods.add("extract native libs")
         val groups = permissionGroups()
         if (groups.isNotEmpty()) mods.add("no ${groups.sorted().joinToString("/")}")
         return if (mods.isEmpty()) "no mods" else mods.joinToString(", ")

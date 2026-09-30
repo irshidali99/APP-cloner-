@@ -300,6 +300,8 @@ class AppClonerLogicTest {
             hideLauncherIcon = true,
             excludeFromRecents = true,
             lockRotation = true,
+            largeHeap = true,
+            extractNativeLibs = true,
             removePermissionGroups = setOf("camera", "location")
         )
         val preset = ClonePreset(name = "Privacy").withSettings(
@@ -314,6 +316,8 @@ class AppClonerLogicTest {
         assertEquals(mods.hideLauncherIcon, restored.hideLauncherIcon)
         assertEquals(mods.excludeFromRecents, restored.excludeFromRecents)
         assertEquals(mods.lockRotation, restored.lockRotation)
+        assertEquals(mods.extractNativeLibs, restored.extractNativeLibs)
+        assertEquals(mods.largeHeap, restored.largeHeap)
         assertEquals(setOf("camera", "location"), restored.removePermissionGroups)
         assertEquals("1.0-clone", restored.versionName)
     }

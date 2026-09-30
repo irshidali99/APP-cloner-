@@ -210,6 +210,12 @@ class ManifestPatcherTest {
     }
 
     @Test
+    fun extractNativeLibsIsWrittenOnTheApplication() {
+        val editor = patchWith(CloneMods(extractNativeLibs = true))
+        assertEquals(-1, value(editor, element(editor, "application"), "extractNativeLibs"))
+    }
+
+    @Test
     fun modsAreReportedForTheCloneDetails() {
         val editor = AxmlEditor.parse(TestFixtures.manifestBytes())
         val applied = ManifestPatcher.apply(

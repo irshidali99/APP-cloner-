@@ -40,7 +40,13 @@ data class CloneMods(
     /** Asks the platform for a bigger heap - helps with clones of memory hungry apps. */
     val largeHeap: Boolean = false,
     /** Declares the clone as a test-only build (it can be uninstalled by the shell without confirmation). */
-    val testOnly: Boolean = false
+    val testOnly: Boolean = false,
+    /**
+     * Forces the platform to extract the native libraries at install time
+     * (`android:extractNativeLibs="true"`). Some apps load their `.so` files from the APK only when it is
+     * packed a certain way; the clone then stops right after it starts, and this switch fixes it.
+     */
+    val extractNativeLibs: Boolean = false
 ) {
 
     /** True when no mod is selected, so the manifest can be left untouched. */
@@ -49,7 +55,7 @@ data class CloneMods(
             !hideLauncherIcon && !excludeFromRecents && !installToSdCard && !disableBackup &&
             !disableCleartextTraffic && !lockRotation && !multiWindow && !pictureInPicture &&
             !kioskMode && removePermissionGroups.isEmpty() && !removeWidgets && !noHistory &&
-            !largeHeap && !testOnly
+            !largeHeap && !testOnly && !extractNativeLibs
 }
 
 /**
