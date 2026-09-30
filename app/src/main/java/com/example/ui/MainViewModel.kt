@@ -416,7 +416,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         signatureScheme = signatureSchemeOf(outcome),
                         certificateFingerprint = outcome.certificateFingerprint,
                         splitNames = outcome.splitNames.joinToString(", "),
-                        modsSummary = outcome.report.appliedMods.joinToString(", ")
+                        modsSummary = outcome.report.appliedMods.joinToString(", "),
+                        obbFiles = outcome.obbFiles.joinToString(", ") { it.name }
                     )
                     cloneRepository.saveClone(record)
                     updateBatchItem(app.packageName) { item ->

@@ -305,9 +305,11 @@ class InstallGatewayActivity : Activity() {
 
                     val nextName = pendingNames.firstOrNull()
                     val nextPath = pendingPaths.firstOrNull()
+                    val nextSource = pendingSources.firstOrNull().orEmpty()
                     if (nextName != null && nextPath != null) {
                         pendingNames.removeAt(0)
                         pendingPaths.removeAt(0)
+                        if (pendingSources.isNotEmpty()) pendingSources.removeAt(0)
                         Toast.makeText(this, "Installed $cloneName, next: $nextName", Toast.LENGTH_SHORT).show()
                         val next = Intent(this, InstallGatewayActivity::class.java).apply {
                             putExtra(EXTRA_APK_PATH, nextPath)

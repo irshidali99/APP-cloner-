@@ -29,13 +29,12 @@ object CloneShortcut {
         launchIntent.action = Intent.ACTION_MAIN
         launchIntent.addCategory(Intent.CATEGORY_LAUNCHER)
 
-        val shortcut = ShortcutInfoCompat.Builder(context, "clone-" + clonePackageId.hashCode())
+        val builder = ShortcutInfoCompat.Builder(context, "clone-" + clonePackageId.hashCode())
             .setShortLabel(label)
             .setLongLabel(label)
             .setIntent(launchIntent)
-            .apply { iconPng?.let { IconCompat.createWithData(it, 0, it.size) } }
-            .build()
+        iconPng?.let { bytes -> builder.setIcon(IconCompat.createWithData(bytes, 0, bytes.size)) }
 
-        return ShortcutManagerCompat.requestPinShortcut(context, shortcut, null)
+        return ShortcutManagerCompat.requestPinShortcut(context, builder.build(), null)
     }
 }
