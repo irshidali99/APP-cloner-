@@ -226,6 +226,51 @@ fun CloneSetupScreen(
                 }
             }
 
+            // Apps that verify their own signature (WhatsApp and friends) install but close right after
+            // their first screen. Say so before the user spends time on a clone that cannot work, and show
+            // the official alternatives.
+            val compatibility by viewModel.compatibilityReport.collectAsStateWithLifecycle()
+            compatibility?.takeIf { it.selfVerifyingApp }?.let { report ->
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF7ED)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("self_verifying_warning")
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = Color(0xFFB45309),
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "This app cannot run as a clone",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = Color(0xFF7C2D12)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = report.alternativeRecommendation ?: report.recommendedAction,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF7C2D12)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "You can still clone it to test, but expect it to close after the first " +
+                                "screen.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFF9A3412)
+                        )
+                    }
+                }
+            }
+
             // Icon Customization Section
             Card(
                 shape = RoundedCornerShape(16.dp),

@@ -167,6 +167,33 @@ class AppClonerLogicTest {
     }
 
     @Test
+    fun testWhatsAppIsReportedAsSelfVerifying() {
+        val whatsApp = InstalledApp(
+            packageName = "com.whatsapp",
+            label = "WhatsApp",
+            versionName = "2.24.1",
+            versionCode = 1L,
+            isSystemApp = false,
+            sourceDir = "/data/app/base.apk",
+            splitSourceDirs = listOf("/data/app/split_config.arm64_v8a.apk"),
+            isSplitApk = true,
+            targetSdkVersion = 34,
+            apkSizeBytes = 1024L,
+            isCloneable = true,
+            clonedCount = 0
+        )
+        val report = CompatibilityReport.evaluate(whatsApp)
+        assertTrue(report.selfVerifyingApp)
+        assertNotNull(report.alternativeRecommendation)
+        assertTrue(report.alternativeRecommendation!!.contains("Add account"))
+
+        val ordinary = whatsApp.copy(packageName = "org.fdroid.fdroid", label = "F-Droid")
+        assertFalse(CompatibilityReport.evaluate(ordinary).selfVerifyingApp)
+        assertFalse(CompatibilityReport.isSelfVerifying("org.fdroid.fdroid"))
+        assertTrue(CompatibilityReport.isSelfVerifying("com.whatsapp.w4b"))
+    }
+
+    @Test
     fun testCloneIndexSuffixOnlyMatchesClonesOfTheSource() {
         assertEquals(1, CloneConfig.cloneIndexSuffix("com.app.demo.clone1", "com.app.demo"))
         assertEquals(12, CloneConfig.cloneIndexSuffix("com.app.demo.clone12", "com.app.demo"))

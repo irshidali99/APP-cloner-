@@ -59,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.installer.InstallLog
 import com.example.model.CloneRecord
+import com.example.model.CompatibilityReport
 import com.example.ui.MainViewModel
 import com.example.ui.components.AppIconView
 import com.example.ui.components.StatusBadge
@@ -297,6 +298,24 @@ fun CloneDetailsScreen(
                                     modifier = Modifier.padding(12.dp)
                                 )
                             }
+                        }
+                    }
+
+                    if (CompatibilityReport.isSelfVerifying(record.sourcePackage)) {
+                        Card(
+                            shape = RoundedCornerShape(10.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF7ED)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("self_verifying_details_notice")
+                        ) {
+                            Text(
+                                text = "Why this clone closes after its first screen:\n\n" +
+                                    CompatibilityReport.selfVerifyingNotice(record.sourceAppName),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFF7C2D12),
+                                modifier = Modifier.padding(12.dp)
+                            )
                         }
                     }
 
