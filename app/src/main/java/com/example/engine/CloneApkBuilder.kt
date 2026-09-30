@@ -279,7 +279,7 @@ class CloneApkBuilder(
                 log("Split kept: ${part.file.name}${part.splitName?.let { " ($it)" } ?: ""}")
             }
             if (report.foreignAuthorities.isNotEmpty()) {
-                log("Foreign provider authorities left untouched: ${report.foreignAuthorities.joinToString()}")
+                log("Provider authorities outside the package renamed: ${report.foreignAuthorities.joinToString()}")
             }
 
             // ---------------------------------------------------------------- 4. sign

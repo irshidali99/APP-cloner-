@@ -163,7 +163,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     CloneConfig.cloneIndexSuffix(record.clonePackageId, installedApp.packageName)
                 } + packageInspector.installedCloneIndexes(installedApp.packageName)
                 ).toSet()
-            val nextCloneIndex = (usedIndexes.maxOrNull() ?: 0) + 1
+            // Verify the candidate name with the package manager as well: an installed clone whose record was
+            // deleted must never be handed out as a "new" package name again.
+            val nextCloneIndex = CloneConfig.nextFreeCloneIndex(
+                usedIndexes = usedIndexes,
+                isInstalled = { candidate -> packageInspector.isPackageInstalled(candidate) },
+                sourcePackage = installedApp.packageName
+            )
             val currentSettings = settings.value
 
             val defaultName = CloneConfig.generateDefaultCloneName(

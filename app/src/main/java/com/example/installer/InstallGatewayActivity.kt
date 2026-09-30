@@ -39,13 +39,15 @@ class InstallGatewayActivity : Activity() {
     private var receiver: InstallStatusReceiver? = null
     private var statusView: TextView? = null
     private var finished = false
+    private var cloneName: String = "clone"
+    private var targetPackageName: String = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         title = "Installing clone"
 
         val apkPath = intent.getStringExtra(EXTRA_APK_PATH)
-        val cloneName = intent.getStringExtra(EXTRA_CLONE_NAME) ?: "clone"
+        cloneName = intent.getStringExtra(EXTRA_CLONE_NAME) ?: "clone"
         val baseApk = apkPath?.let { File(it) }
 
         if (baseApk == null || !baseApk.isFile) {
@@ -93,13 +95,52 @@ class InstallGatewayActivity : Activity() {
         // attempt). Android then answers with "App not installed as package conflicts with an existing
         // package"; saying so up front and offering to uninstall is far more useful.
         val targetPackage = runCatching { ApkTransformer.readPackageIdentity(baseApk).first }.getOrNull()
+        targetPackageName = targetPackage.orEmpty()
         if (targetPackage != null && isInstalled(targetPackage)) {
+            InstallLog.record(
+                context = this,
+                cloneName = cloneName,
+                packageName = targetPackage,
+                success = false,
+                status = PackageInstaller.STATUS_FAILURE_CONFLICT,
+                message = "A clone with this package name is already installed on the device.",
+                expectedSplits = PackageInstallerManager(this).splitNamesOf(baseApk),
+                installedSplits = PackageInstallerManager(this).installedSplitNames(targetPackage)
+            )
             promptUninstall(targetPackage)
             return
         }
 
         expectedSplitNames = PackageInstallerManager(this).splitNamesOf(baseApk)
-        startSession(parts, cloneName)
+
+        // A part that belongs to another package would make the installer fail with a message that says
+        // nothing about the real problem, so the parts are checked here first.
+        val inconsistent = parts.filter { part ->
+            val identity = runCatching { ApkTransformer.readPackageIdentity(part) }.getOrNull()
+            identity == null || identity.first.isNullOrBlank() ||
+                (targetPackage != null && identity.first != targetPackage)
+        }
+        if (inconsistent.isNotEmpty()) {
+            InstallLog.record(
+                context = this,
+                cloneName = cloneName,
+                packageName = targetPackageName,
+                success = false,
+                status = PackageInstaller.STATUS_FAILURE_INVALID,
+                message = "These parts do not belong to the clone: " +
+                    inconsistent.joinToString { it.name },
+                expectedSplits = expectedSplitNames,
+                installedSplits = emptyList()
+            )
+            showFailure(
+                "The clone folder is not consistent: " + inconsistent.joinToString { it.name } +
+                    " do not carry the package name " + (targetPackage ?: "?") + ".\n\n" +
+                    "Clone the app again so all parts belong together."
+            )
+            return
+        }
+
+        startSession(parts, cloneName, targetPackage)
     }
 
     private var expectedSplitNames: List<String> = emptyList()
@@ -136,7 +177,7 @@ class InstallGatewayActivity : Activity() {
             .show()
     }
 
-    private fun startSession(parts: List<File>, cloneName: String) {
+    private fun startSession(parts: List<File>, cloneName: String, appPackageName: String?) {
         val resultIntent = Intent(InstallResultReceiver.ACTION_INSTALL_RESULT).apply {
             setPackage(packageName)
         }
@@ -158,7 +199,8 @@ class InstallGatewayActivity : Activity() {
             }
         }
 
-        val sessionId = PackageInstallerManager(this).createSession(parts, pendingIntent.intentSender)
+        val sessionId = PackageInstallerManager(this)
+            .createSession(parts, pendingIntent.intentSender, appPackageName)
         if (sessionId < 0) {
             showFailure(PackageInstallerManager.lastError ?: "The installer rejected the session.")
             return
@@ -202,11 +244,26 @@ class InstallGatewayActivity : Activity() {
                 }.orEmpty()
                 val missing = expectedSplits.filterNot { it in installedSplits }
                 Log.i(TAG, "installed=${packageName ?: "?"} expectedSplits=$expectedSplits installedSplits=$installedSplits")
+                InstallLog.record(
+                    context = this,
+                    cloneName = cloneName,
+                    packageName = packageName ?: targetPackageName,
+                    success = missing.isEmpty(),
+                    status = status,
+                    message = if (missing.isEmpty()) {
+                        "Installed with ${installedSplits.size + 1} part(s)."
+                    } else {
+                        "Installed, but these parts are missing: ${missing.joinToString()}"
+                    },
+                    expectedSplits = expectedSplits,
+                    installedSplits = installedSplits
+                )
                 if (missing.isNotEmpty()) {
                     showFailure(
                         "The app installed, but these parts are missing: ${missing.joinToString()}.\n\n" +
-                            "A clone that is missing parts closes right after its first screen. Re-clone the app " +
-                            "and install it with \"Install now\" again (do not install the base APK by hand)."
+                            "A clone that is missing parts closes right after its first screen.\n\n" +
+                            "Tap \"Install now\" again and keep the whole bundle together - do not install " +
+                            "or share the base APK by itself."
                     )
                 } else {
                     Toast.makeText(
@@ -228,6 +285,18 @@ class InstallGatewayActivity : Activity() {
                     PackageInstaller.STATUS_FAILURE_STORAGE -> "Not enough storage space."
                     else -> "The installation failed (status $status)."
                 }
+                InstallLog.record(
+                    context = this,
+                    cloneName = cloneName,
+                    packageName = packageName ?: targetPackageName,
+                    success = false,
+                    status = status,
+                    message = message,
+                    expectedSplits = expectedSplitNames,
+                    installedSplits = packageName?.let {
+                        PackageInstallerManager(this).installedSplitNames(it)
+                    }.orEmpty()
+                )
                 showFailure("$readable\n\n${message ?: "no further details from the installer"}")
             }
         }

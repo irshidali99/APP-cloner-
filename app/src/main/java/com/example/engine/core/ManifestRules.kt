@@ -19,13 +19,46 @@ object ManifestRules {
 
     /**
      * Re-targets a `;` separated authority list (`com.example.app.fileprovider`).
-     * Elements that do not belong to [from] are left untouched.
+     *
+     * Authorities that do not belong to [from] still have to change: an authority is unique across the whole
+     * device, so a clone that declared the same one as the installed original (or as an earlier clone) would
+     * fail with `INSTALL_FAILED_CONFLICTING_PROVIDER`. They are moved into the clone's own namespace.
      */
     fun rewriteAuthorities(value: String, from: String, to: String): String =
         value.split(';').joinToString(";") { part ->
             val trimmed = part.trim()
-            rewritePackagePrefix(trimmed, from, to) ?: part
+            rewritePackagePrefix(trimmed, from, to) ?: uniqueAuthority(trimmed, to)
         }
+
+    /** Authorities are normally domain like strings; anything else is made safe for one. */
+    private val AUTHORITY_UNSAFE = Regex("[^A-Za-z0-9_.]")
+
+    private val PERMISSION_UNSAFE = Regex("[^A-Za-z0-9_.]")
+
+    /**
+     * Puts a value that belongs to another namespace into [newPackage]'s namespace.
+     *
+     * Used for authorities and permissions that do not start with the package of the app that declares
+     * them: they are globally unique, so they would collide with the still installed original app.
+     */
+    fun uniqueAuthority(authority: String, newPackage: String, maxLength: Int = 127): String {
+        val sanitized = authority.replace(AUTHORITY_UNSAFE, "_").trim('.')
+        val candidate = "$newPackage.$sanitized"
+        if (candidate.length in 1..maxLength) return candidate
+        return "$newPackage.${shortHash(authority)}"
+    }
+
+    /** Permission name for a permission that has to move into [newPackage]'s namespace. */
+    fun uniquePermissionName(permission: String, newPackage: String): String {
+        val sanitized = permission.replace(PERMISSION_UNSAFE, "_").trim('.')
+        return "$newPackage.$sanitized"
+    }
+
+    private fun shortHash(value: String): String =
+        java.security.MessageDigest.getInstance("SHA-1")
+            .digest(value.toByteArray(Charsets.UTF_8))
+            .take(4)
+            .joinToString("") { byte -> "%02x".format(byte) }
 
     /**
      * Expands a component class name so that it keeps pointing at the *original* class after the package
@@ -78,6 +111,13 @@ object ManifestRules {
         "backupAgent",
         "manageSpaceActivity",
         "appComponentFactory"
+    )
+
+    /** Attributes that name a permission which is declared by this application. */
+    val PERMISSION_REFERENCE_ATTRIBUTES = setOf(
+        "permission",
+        "readPermission",
+        "writePermission"
     )
 
     /** Attributes whose value may be derived from the application package. */

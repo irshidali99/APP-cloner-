@@ -61,6 +61,27 @@ data class CloneConfig(
             return packageId.removePrefix(prefix).toIntOrNull()
         }
 
+        /**
+         * Picks the next really free clone index.
+         *
+         * Starting from one above the highest index that is known to be taken (from the clone history and
+         * from the packages installed on the device), the candidate is verified with [isInstalled] as well,
+         * so a name that is still occupied by an installed clone can never be handed out twice. Android
+         * would reject such an install with "package conflicts with an existing package".
+         */
+        fun nextFreeCloneIndex(
+            usedIndexes: Set<Int>,
+            isInstalled: (String) -> Boolean,
+            sourcePackage: String,
+            limit: Int = 99
+        ): Int {
+            var candidate = (usedIndexes.filter { it > 0 }.maxOrNull() ?: 0) + 1
+            while (candidate <= limit && isInstalled(generateDefaultPackageId(sourcePackage, candidate))) {
+                candidate++
+            }
+            return candidate
+        }
+
         fun generateDefaultCloneName(sourceAppName: String, cloneIndex: Int, autoNumber: Boolean): String {
             return if (autoNumber) {
                 "$sourceAppName (Clone $cloneIndex)"

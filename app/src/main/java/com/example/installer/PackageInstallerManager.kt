@@ -106,11 +106,16 @@ class PackageInstallerManager(private val context: Context) {
      * @return the session id, or `-1` when the session could not be created.
      */
     @SuppressLint("MissingPermission")
-    fun createSession(apkFiles: List<File>, statusSender: IntentSender): Int {
+    fun createSession(apkFiles: List<File>, statusSender: IntentSender, appPackageName: String? = null): Int {
         require(apkFiles.isNotEmpty()) { "no APK to install" }
         return try {
             val installer = context.packageManager.packageInstaller
             val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+            // Naming the target package tells the installer which app the session belongs to, which is what
+            // a split installation expects (the base APK alone does not identify the bundle).
+            if (!appPackageName.isNullOrBlank()) {
+                params.setAppPackageName(appPackageName)
+            }
             val sessionId = installer.createSession(params)
 
             installer.openSession(sessionId).use { session ->

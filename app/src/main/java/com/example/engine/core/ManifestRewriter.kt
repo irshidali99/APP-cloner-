@@ -8,6 +8,7 @@ data class ManifestRewriteReport(
     val qualifiedComponents: Int,
     val authoritiesChanged: Int,
     val attributesChanged: Int,
+    /** Authorities that did not belong to the original package and were moved into the clone's namespace. */
     val foreignAuthorities: List<String>,
     /** Permissions owned by the original app that were re-targeted to the new package. */
     val renamedPermissions: List<String> = emptyList()
@@ -80,6 +81,11 @@ object ManifestRewriter {
         // installed package already owns that permission.
         val renamedPermissions = LinkedHashSet<String>()
 
+        // Permissions the app declares but names outside its own namespace (for example a bundled SDK).
+        // They are globally unique too, so the clone cannot declare them again; they are renamed and every
+        // reference to them follows.
+        val foreignPermissions = LinkedHashMap<String, String>()
+
         for (element in editor.startElements()) {
             val elementName = editor.elementName(element) ?: continue
 
@@ -98,7 +104,8 @@ object ManifestRewriter {
                         authoritiesChanged++
                         attributesChanged++
                     }
-                    // Authorities that do not belong to this package would collide with the original app.
+                    // Authorities outside this package are moved into the clone's namespace, otherwise the
+                    // clone collides with the app that is already installed.
                     current.split(';').forEach { part ->
                         val trimmed = part.trim()
                         if (trimmed.isNotEmpty() &&
@@ -120,6 +127,12 @@ object ManifestRewriter {
                     val rewritten = ManifestRules.rewritePackagePrefix(current, originalPackage, newPackage)
                     if (rewritten != null && rewritten != current) {
                         editor.setStringAttribute(attribute, rewritten)
+                        renamedPermissions.add(current)
+                        attributesChanged++
+                    } else if (rewritten == null && elementName in ManifestRules.DECLARED_PERMISSION_ELEMENTS) {
+                        val unique = ManifestRules.uniquePermissionName(current, newPackage)
+                        foreignPermissions[current] = unique
+                        editor.setStringAttribute(attribute, unique)
                         renamedPermissions.add(current)
                         attributesChanged++
                     }
@@ -180,6 +193,28 @@ object ManifestRewriter {
                 if (cloneLabel != null && android && attributeName == "label" && elementName == "application") {
                     editor.setStringAttribute(attribute, cloneLabel)
                     labelChanged = cloneLabel
+                    attributesChanged++
+                }
+            }
+        }
+
+        // A renamed permission has to be renamed everywhere it is referenced: the components that are
+        // protected by it (android:permission / readPermission / writePermission) and the uses-permission
+        // entries of the same name.
+        if (foreignPermissions.isNotEmpty()) {
+            for (element in editor.startElements()) {
+                val elementName = editor.elementName(element) ?: continue
+                for (attribute in element.attributes) {
+                    val attributeName = editor.attributeName(attribute) ?: continue
+                    val referencesPermission = attributeName in ManifestRules.PERMISSION_REFERENCE_ATTRIBUTES
+                    val namesPermission = attributeName == "name" &&
+                        (elementName in ManifestRules.DECLARED_PERMISSION_ELEMENTS ||
+                            elementName in ManifestRules.CONSUMED_PERMISSION_ELEMENTS)
+                    if (!referencesPermission && !namesPermission) continue
+
+                    val current = editor.string(attribute.rawValue) ?: continue
+                    val renamed = foreignPermissions[current] ?: continue
+                    editor.setStringAttribute(attribute, renamed)
                     attributesChanged++
                 }
             }

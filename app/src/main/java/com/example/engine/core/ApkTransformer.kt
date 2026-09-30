@@ -160,7 +160,8 @@ object ApkTransformer {
             )
             if (rewriteReport.foreignAuthorities.isNotEmpty()) {
                 warnings.add(
-                    "providers declaring foreign authorities were left unchanged: " +
+                    "provider authorities outside the package were moved into the clone's namespace " +
+                        "(an authority is unique per device): " +
                         rewriteReport.foreignAuthorities.joinToString()
                 )
             }

@@ -9,6 +9,7 @@ import com.example.model.PipelineStage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -163,5 +164,48 @@ class AppClonerLogicTest {
         )
         assertTrue(progress.isComplete)
         assertEquals(1.0f, progress.progressFraction, 0.001f)
+    }
+
+    @Test
+    fun testCloneIndexSuffixOnlyMatchesClonesOfTheSource() {
+        assertEquals(1, CloneConfig.cloneIndexSuffix("com.app.demo.clone1", "com.app.demo"))
+        assertEquals(12, CloneConfig.cloneIndexSuffix("com.app.demo.clone12", "com.app.demo"))
+        assertNull(CloneConfig.cloneIndexSuffix("com.app.demo", "com.app.demo"))
+        assertNull(CloneConfig.cloneIndexSuffix("com.app.demo.clone", "com.app.demo"))
+        assertNull(CloneConfig.cloneIndexSuffix("com.app.other.clone1", "com.app.demo"))
+    }
+
+    @Test
+    fun testNextFreeCloneIndexSkipsEveryTakenName() {
+        // History knows about clone 1, an installed package that has no record occupies clone 2.
+        val installed = setOf("com.app.demo.clone2")
+        val index = CloneConfig.nextFreeCloneIndex(
+            usedIndexes = setOf(1),
+            isInstalled = { candidate -> candidate in installed },
+            sourcePackage = "com.app.demo"
+        )
+        assertEquals(3, index)
+        assertEquals("com.app.demo.clone3", CloneConfig.generateDefaultPackageId("com.app.demo", index))
+    }
+
+    @Test
+    fun testNextFreeCloneIndexChecksTheCandidateEvenWhenNothingIsKnown() {
+        // Nothing in the history, but the package manager reports that "clone1" is installed.
+        val index = CloneConfig.nextFreeCloneIndex(
+            usedIndexes = emptySet(),
+            isInstalled = { candidate -> candidate == "com.app.demo.clone1" },
+            sourcePackage = "com.app.demo"
+        )
+        assertEquals(2, index)
+    }
+
+    @Test
+    fun testNextFreeCloneIndexGivesTheFirstIndexOnAFreshInstall() {
+        val index = CloneConfig.nextFreeCloneIndex(
+            usedIndexes = emptySet(),
+            isInstalled = { false },
+            sourcePackage = "com.app.demo"
+        )
+        assertEquals(1, index)
     }
 }

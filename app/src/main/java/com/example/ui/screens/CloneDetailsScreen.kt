@@ -1,6 +1,9 @@
 package com.example.ui.screens
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -54,6 +57,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.installer.InstallLog
 import com.example.model.CloneRecord
 import com.example.ui.MainViewModel
 import com.example.ui.components.AppIconView
@@ -230,6 +234,28 @@ fun CloneDetailsScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+
+                        // What the Android installer answered last time. Without this the reason for a
+                        // refused installation only exists in a dialog that cannot be copied.
+                        val lastAttempt = remember(record.id, record.installStatus) {
+                            InstallLog.read(context, record.clonePackageId)
+                        }
+                        if (lastAttempt != null) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = "Last install attempt: " +
+                                    if (lastAttempt.success) "installed" else "not installed",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = if (lastAttempt.success) Color(0xFF059669) else Color(0xFFB45309)
+                            )
+                            Text(
+                                text = lastAttempt.message.ifBlank { "no message from the installer" },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
@@ -247,6 +273,31 @@ fun CloneDetailsScreen(
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
+                    val expectedPartSplits = record.splitNames
+                        .split(',')
+                        .map { it.trim() }
+                        .filter { it.isNotEmpty() }
+                    if (record.isInstalled && expectedPartSplits.isNotEmpty()) {
+                        val installedNow = viewModel.installedSplitNames(record.clonePackageId)
+                        if (installedNow.size < expectedPartSplits.size) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = Color(0xFFFFF7ED),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "This clone is missing ${expectedPartSplits.size - installedNow.size} " +
+                                        "of its ${expectedPartSplits.size} split APK(s). An app that is missing " +
+                                        "parts closes right after its first screen. Tap \"Install Package\" " +
+                                        "below to install the complete bundle again.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color(0xFF7C2D12),
+                                    modifier = Modifier.padding(12.dp)
+                                )
+                            }
+                        }
+                    }
+
                     if (record.isInstalled) {
                         Button(
                             onClick = {
@@ -318,6 +369,50 @@ fun CloneDetailsScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("Uninstall Clone from Device")
                         }
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            val expected = record.splitNames.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+                            val installed = if (record.isInstalled) {
+                                viewModel.installedSplitNames(record.clonePackageId)
+                            } else {
+                                emptyList()
+                            }
+                            val report = buildString {
+                                append("App Cloner diagnostics\n")
+                                append("Clone: ").append(record.cloneName).append('\n')
+                                append("Package: ").append(record.clonePackageId).append('\n')
+                                append("Source app: ").append(record.sourceAppName)
+                                append(" (").append(record.sourcePackage).append(")\n")
+                                append("Status: ").append(record.installStatus).append('\n')
+                                append("Signature: ").append(record.signatureScheme)
+                                append(if (record.isVerified) " verified" else " unverified").append('\n')
+                                append("Certificate SHA-256: ").append(record.certificateFingerprint).append('\n')
+                                append("Expected splits: ")
+                                append(expected.joinToString(", ").ifBlank { "none" }).append('\n')
+                                append("Installed splits: ")
+                                append(installed.joinToString(", ").ifBlank { "none" }).append('\n')
+                                append("Android: SDK ").append(android.os.Build.VERSION.SDK_INT)
+                                append(" (").append(android.os.Build.MANUFACTURER).append(' ')
+                                append(android.os.Build.MODEL).append(")\n")
+                                lastAttempt?.let { attempt ->
+                                    append('\n').append(attempt.describe())
+                                }
+                            }
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newPlainText("App Cloner diagnostics", report))
+                            Toast.makeText(context, "Diagnostics copied", Toast.LENGTH_SHORT).show()
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("details_copy_diagnostics_button")
+                    ) {
+                        Icon(imageVector = Icons.Default.Info, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Copy Diagnostics")
                     }
 
                     OutlinedButton(

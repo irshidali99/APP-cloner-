@@ -121,6 +121,44 @@ class PackageInspector(private val context: Context) {
             apps.sortedBy { it.label.lowercase() }
         }
 
+    /** True when a package with that name is installed and visible to this app. */
+    fun isPackageInstalled(packageName: String): Boolean = try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packageManager.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.getPackageInfo(packageName, 0)
+        }
+        true
+    } catch (notInstalled: Exception) {
+        false
+    }
+
+    /**
+     * Package names of every app that has a launcher entry.
+     *
+     * Used in addition to `getInstalledPackages`, because since Android 11 the package manager hides apps
+     * that do not match the `<queries>` of this app. A launcher query is declared in the manifest, so this
+     * list is complete for the apps a clone can come from or turn into - and every clone has a launcher
+     * entry.
+     */
+    fun launchablePackageNames(): Set<String> {
+        val mainIntent = Intent(Intent.ACTION_MAIN, null).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+        }
+        val resolved = try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                packageManager.queryIntentActivities(mainIntent, PackageManager.ResolveInfoFlags.of(0))
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.queryIntentActivities(mainIntent, 0)
+            }
+        } catch (error: Exception) {
+            emptyList()
+        }
+        return resolved.mapNotNull { it.activityInfo?.packageName }.toSet()
+    }
+
     /**
      * Clone indexes that are currently installed for [sourcePackage].
      *
@@ -139,8 +177,13 @@ class PackageInspector(private val context: Context) {
         } catch (error: Exception) {
             emptyList()
         }
-        return packages.mapNotNull { info ->
-            com.example.model.CloneConfig.cloneIndexSuffix(info.packageName, sourcePackage)
+        // Two independent sources: the package manager list and the launcher query. Either one alone can be
+        // incomplete because of package visibility filtering on Android 11+.
+        val names = LinkedHashSet<String>()
+        packages.forEach { info -> names.add(info.packageName) }
+        names.addAll(launchablePackageNames())
+        return names.mapNotNull { name ->
+            com.example.model.CloneConfig.cloneIndexSuffix(name, sourcePackage)
         }.toSet()
     }
 
