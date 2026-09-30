@@ -35,10 +35,10 @@ object ManifestPatcher {
     private const val BOOLEAN_FALSE = 0
 
     /**
-     * @param baseOnly `false` while a split is being rewritten: only the identity mods are applied then.
+     * @param isBasePart `true` while the base APK is rewritten; a split only gets the identity mods.
      * @return one description per mod that was really applied, for the clone report.
      */
-    fun apply(editor: AxmlEditor, mods: CloneMods, baseOnly: Boolean): List<String> {
+    fun apply(editor: AxmlEditor, mods: CloneMods, isBasePart: Boolean): List<String> {
         val applied = ArrayList<String>()
         if (mods.isEmpty) return applied
 
@@ -69,7 +69,9 @@ object ManifestPatcher {
             }
         }
 
-        if (baseOnly) return applied
+        // A split has no launcher entry, no application element of its own and rarely permissions; it only
+        // has to agree with the base about the version, so everything else is skipped for it.
+        if (!isBasePart) return applied
 
         // ------------------------------------------------------------------ storage & privacy (base only)
         if (manifest != null && mods.installToSdCard) {

@@ -14,10 +14,10 @@ import org.junit.Test
  */
 class ManifestPatcherTest {
 
-    private fun patchWith(mods: CloneMods, baseOnly: Boolean = true): AxmlEditor =
+    private fun patchWith(mods: CloneMods, isBasePart: Boolean = true): AxmlEditor =
         try {
             val editor = AxmlEditor.parse(TestFixtures.manifestBytes())
-            ManifestPatcher.apply(editor, mods, baseOnly)
+            ManifestPatcher.apply(editor, mods, isBasePart)
             // Round tripping through the serialiser proves the offsets written are parseable again.
             AxmlEditor.parse(editor.toByteArray())
         } catch (error: Throwable) {
@@ -25,7 +25,7 @@ class ManifestPatcherTest {
         }
 
     /** Same as [patchWith] but the caller gets the callback form for readable failure messages. */
-    private fun patch(mods: CloneMods, baseOnly: Boolean = true): AxmlEditor = patchWith(mods, baseOnly)
+    private fun patch(mods: CloneMods, isBasePart: Boolean = true): AxmlEditor = patchWith(mods, isBasePart)
 
     private fun element(editor: AxmlEditor, name: String): AxmlNode.StartElement? =
         editor.startElements().firstOrNull { editor.elementName(it) == name }
@@ -79,7 +79,7 @@ class ManifestPatcherTest {
     @Test
     fun identityModsAreWrittenIntoEveryPart() {
         // Splits need the same version as the base, otherwise Android refuses the installation.
-        val editor = patchWith(CloneMods(versionName = "2.0-clone"), baseOnly = false)
+        val editor = patchWith(CloneMods(versionName = "2.0-clone"), isBasePart = false)
         val manifest = element(editor, "manifest")
         assertEquals("2.0-clone", editor.findAttribute(manifest!!, ManifestRules.ANDROID_NAMESPACE, "versionName")?.let { editor.string(it.rawValue) })
     }
@@ -156,7 +156,7 @@ class ManifestPatcherTest {
         val applied = ManifestPatcher.apply(
             editor,
             CloneMods(hideLauncherIcon = true, excludeFromRecents = true, removePermissionGroups = setOf("camera")),
-            baseOnly = true
+            isBasePart = true
         )
         assertTrue("missing launcher report: $applied", applied.any { it.contains("launcher icon hidden") })
         assertTrue("missing recents report: $applied", applied.any { it.contains("recent apps") })

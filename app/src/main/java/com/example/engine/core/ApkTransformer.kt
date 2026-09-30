@@ -169,7 +169,7 @@ object ApkTransformer {
             val appliedMods = ManifestPatcher.apply(
                 editor = editor,
                 mods = request.mods,
-                baseOnly = role == CloneRole.BASE
+                isBasePart = role == CloneRole.BASE
             )
 
             if (rewriteReport.foreignAuthorities.isNotEmpty()) {
