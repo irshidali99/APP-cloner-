@@ -120,24 +120,25 @@ class ManifestPatcherTest {
     @Test
     fun selectedPermissionGroupsAreRemoved() {
         val mods = CloneMods(removePermissionGroups = setOf("camera"))
-        val permissions = patchWith(mods).startElements()
-            .filter { editor.elementName(it) == "uses-permission" }
-            .mapNotNull { editor.findAttribute(it, ManifestRules.ANDROID_NAMESPACE, "name") }
-            .mapNotNull { editor.string(it.rawValue) }
+        check("permissions", mods) { editor ->
+            val permissions = editor.startElements()
+                .filter { editor.elementName(it) == "uses-permission" }
+                .mapNotNull { editor.findAttribute(it, ManifestRules.ANDROID_NAMESPACE, "name") }
+                .mapNotNull { editor.string(it.rawValue) }
 
-        assertFalse(permissions.contains(TestFixtures.DANGEROUS_PERMISSION))
-        // A permission that was not selected stays untouched.
-        assertTrue(permissions.contains(TestFixtures.PERMISSION_NAME))
+            assertTrue("camera permission is still declared: $permissions", !permissions.contains(TestFixtures.DANGEROUS_PERMISSION))
+            // A permission that was not selected stays untouched.
+            assertTrue("unselected permission was removed: $permissions", permissions.contains(TestFixtures.PERMISSION_NAME))
+        }
     }
 
     @Test
     fun hidingTheLauncherIconRemovesTheLauncherIntentFilter() {
         val editor = patchWith(CloneMods(hideLauncherIcon = true))
-        assertTrue(
-            editor.startElements().none { editor.elementName(it) == "intent-filter" }
-        )
+        val filters = editor.startElements().filter { editor.elementName(it) == "intent-filter" }
+        assertTrue("launcher filter was not removed: ${filters.size} left", filters.isEmpty())
         // The activity itself stays, only its launcher entry is gone.
-        assertNotNull(element(editor, "activity"))
+        assertNotNull("the activity disappeared", element(editor, "activity"))
     }
 
     @Test
@@ -157,8 +158,8 @@ class ManifestPatcherTest {
             CloneMods(hideLauncherIcon = true, excludeFromRecents = true, removePermissionGroups = setOf("camera")),
             baseOnly = true
         )
-        assertTrue(applied.any { it.contains("launcher icon hidden") })
-        assertTrue(applied.any { it.contains("recent apps") })
-        assertTrue(applied.any { it.contains("permission") })
+        assertTrue("missing launcher report: $applied", applied.any { it.contains("launcher icon hidden") })
+        assertTrue("missing recents report: $applied", applied.any { it.contains("recent apps") })
+        assertTrue("missing permission report: $applied", applied.any { it.contains("permission") })
     }
 }
