@@ -134,6 +134,18 @@ class AxmlEditor private constructor(
         return attribute
     }
 
+    /**
+     * Makes sure the resource map covers [nameIndex] and carries [resourceId] for it. New attribute names
+     * are appended to the pool, so the map (which maps the first entries of the pool) has to grow with them.
+     */
+    private fun ensureResourceId(nameIndex: Int, resourceId: Int) {
+        if (resourceId == 0 || nameIndex < resourceIds.size) return
+        val grown = IntArray(nameIndex + 1)
+        resourceIds.copyInto(grown)
+        grown[nameIndex] = resourceId
+        resourceIds = grown
+    }
+
     /** Removes an element together with everything nested inside it. */
     fun removeElement(element: AxmlNode.StartElement) {
         val start = nodes.indexOf(element)
