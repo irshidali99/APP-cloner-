@@ -48,7 +48,7 @@ object TestFixtures {
         ORIGINAL_PACKAGE, ".DataProvider", PROVIDER_AUTHORITY, ".MainActivity", ORIGINAL_LABEL,
         "permission", "uses-permission", "sharedUserId", PERMISSION_NAME,
         "uses-sdk", "versionCode", "versionName", "minSdkVersion", "targetSdkVersion",
-        "intent-filter", "action", "category",
+        "intent-filter", "action", "category", "priority",
         "android.intent.action.MAIN", "android.intent.category.LAUNCHER", DANGEROUS_PERMISSION
     )
 
@@ -118,13 +118,6 @@ object TestFixtures {
             )
         )
         addNode(endElement("uses-sdk"))
-        addNode(
-            startElement(
-                "uses-permission",
-                listOf(attribute(ANDROID_NAMESPACE, "name", TYPE_STRING, index(DANGEROUS_PERMISSION)))
-            )
-        )
-        addNode(endElement("uses-permission"))
         addNode(
             startElement(
                 "uses-permission",

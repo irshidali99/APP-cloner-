@@ -14,12 +14,18 @@ import org.junit.Test
  */
 class ManifestPatcherTest {
 
-    private fun patch(mods: CloneMods, baseOnly: Boolean = true): AxmlEditor {
-        val editor = AxmlEditor.parse(TestFixtures.manifestBytes())
-        ManifestPatcher.apply(editor, mods, baseOnly)
-        // Round tripping through the serialiser proves the offsets written are parseable again.
-        return AxmlEditor.parse(editor.toByteArray())
-    }
+    private fun patchWith(mods: CloneMods, baseOnly: Boolean = true): AxmlEditor =
+        try {
+            val editor = AxmlEditor.parse(TestFixtures.manifestBytes())
+            ManifestPatcher.apply(editor, mods, baseOnly)
+            // Round tripping through the serialiser proves the offsets written are parseable again.
+            AxmlEditor.parse(editor.toByteArray())
+        } catch (error: Throwable) {
+            throw AssertionError("patching $mods threw $error", error)
+        }
+
+    /** Same as [patchWith] but the caller gets the callback form for readable failure messages. */
+    private fun patch(mods: CloneMods, baseOnly: Boolean = true): AxmlEditor = patchWith(mods, baseOnly)
 
     private fun element(editor: AxmlEditor, name: String): AxmlNode.StartElement? =
         editor.startElements().firstOrNull { editor.elementName(it) == name }
@@ -27,61 +33,94 @@ class ManifestPatcherTest {
     private fun value(editor: AxmlEditor, element: AxmlNode.StartElement?, attribute: String): Int? =
         element?.let { editor.findAttribute(it, ManifestRules.ANDROID_NAMESPACE, attribute) }?.valueData
 
+    /** Every element with all of its attributes, used in failure messages. */
+    private fun dump(editor: AxmlEditor): String = buildString {
+        for (element in editor.startElements()) {
+            append("  <").append(editor.elementName(element)).append('>')
+            for (attribute in element.attributes) {
+                append(' ').append(editor.attributeName(attribute) ?: "?")
+                append('=').append(attribute.valueData)
+                append('(').append(attribute.valueType).append(')')
+            }
+            append('\n')
+        }
+    }
+
+    private fun check(name: String, mods: CloneMods, block: (AxmlEditor) -> Unit) {
+        val editor = try {
+            patch(mods)
+        } catch (error: Throwable) {
+            throw AssertionError("[$name] patching $mods threw $error", error)
+        }
+        try {
+            block(editor)
+        } catch (error: Throwable) {
+            throw AssertionError("[$name] failed for $mods: $error\nmanifest:\n${dump(editor)}", error)
+        }
+    }
+
     @Test
     fun versionAndSdkOverridesAreWritten() {
-        val editor = patch(CloneMods(versionName = "9.9-clone", versionCode = 999, minSdk = 24, targetSdk = 33))
-        val manifest = element(editor, "manifest")
-        val usesSdk = element(editor, "uses-sdk")
-
-        assertEquals("9.9-clone", editor.findAttribute(manifest!!, ManifestRules.ANDROID_NAMESPACE, "versionName")?.let { editor.string(it.rawValue) })
-        assertEquals(999, value(editor, manifest, "versionCode"))
-        assertEquals(24, value(editor, usesSdk, "minSdkVersion"))
-        assertEquals(33, value(editor, usesSdk, "targetSdkVersion"))
+        val mods = CloneMods(versionName = "9.9-clone", versionCode = 999, minSdk = 24, targetSdk = 33)
+        check("version", mods) { editor ->
+            val manifest = element(editor, "manifest")
+            val usesSdk = element(editor, "uses-sdk")
+            assertNotNull("manifest element missing", manifest)
+            assertEquals(
+                "9.9-clone",
+                editor.findAttribute(manifest!!, ManifestRules.ANDROID_NAMESPACE, "versionName")?.let { editor.string(it.rawValue) }
+            )
+            assertEquals(999, value(editor, manifest, "versionCode"))
+            assertEquals(24, value(editor, usesSdk, "minSdkVersion"))
+            assertEquals(33, value(editor, usesSdk, "targetSdkVersion"))
+        }
     }
 
     @Test
     fun identityModsAreWrittenIntoEveryPart() {
         // Splits need the same version as the base, otherwise Android refuses the installation.
-        val editor = patch(CloneMods(versionName = "2.0-clone"), baseOnly = false)
+        val editor = patchWith(CloneMods(versionName = "2.0-clone"), baseOnly = false)
         val manifest = element(editor, "manifest")
         assertEquals("2.0-clone", editor.findAttribute(manifest!!, ManifestRules.ANDROID_NAMESPACE, "versionName")?.let { editor.string(it.rawValue) })
     }
 
     @Test
     fun behaviourModsAreAddedToTheApplicationElement() {
-        val editor = patch(
-            CloneMods(
-                disableBackup = true,
-                disableCleartextTraffic = true,
-                multiWindow = true,
-                pictureInPicture = true,
-                installToSdCard = true
-            )
+        val mods = CloneMods(
+            disableBackup = true,
+            disableCleartextTraffic = true,
+            multiWindow = true,
+            pictureInPicture = true,
+            installToSdCard = true
         )
-        val application = element(editor, "application")
-        val manifest = element(editor, "manifest")
-
-        assertEquals(0, value(editor, application, "allowBackup")) // false is stored as 0
-        assertEquals(0, value(editor, application, "usesCleartextTraffic"))
-        assertEquals(-1, value(editor, application, "resizeableActivity")) // true is stored as -1
-        assertEquals(-1, value(editor, application, "supportsPictureInPicture"))
-        assertEquals(2, value(editor, manifest, "installLocation"))
+        check("behaviour", mods) { editor ->
+            val application = element(editor, "application")
+            val manifest = element(editor, "manifest")
+            assertNotNull("application element missing", application)
+            assertEquals(0, value(editor, application, "allowBackup")) // false is stored as 0
+            assertEquals(0, value(editor, application, "usesCleartextTraffic"))
+            assertEquals(-1, value(editor, application, "resizeableActivity")) // true is stored as -1
+            assertEquals(-1, value(editor, application, "supportsPictureInPicture"))
+            assertEquals(2, value(editor, manifest, "installLocation"))
+        }
     }
 
     @Test
     fun activityModsAreAddedToEveryActivity() {
-        val editor = patch(CloneMods(excludeFromRecents = true, lockRotation = true, kioskMode = true))
-        val activity = element(editor, "activity")
-
-        assertEquals(-1, value(editor, activity, "excludeFromRecents"))
-        assertEquals(1, value(editor, activity, "screenOrientation")) // portrait
-        assertEquals(1, value(editor, activity, "lockTaskMode")) // if_whitelisted
+        val mods = CloneMods(excludeFromRecents = true, lockRotation = true, kioskMode = true)
+        check("activity", mods) { editor ->
+            val activity = element(editor, "activity")
+            assertNotNull("activity element missing", activity)
+            assertEquals(-1, value(editor, activity, "excludeFromRecents"))
+            assertEquals(1, value(editor, activity, "screenOrientation")) // portrait
+            assertEquals(1, value(editor, activity, "lockTaskMode")) // if_whitelisted
+        }
     }
 
     @Test
     fun selectedPermissionGroupsAreRemoved() {
-        val editor = patch(CloneMods(removePermissionGroups = setOf("camera")))
-        val permissions = editor.startElements()
+        val mods = CloneMods(removePermissionGroups = setOf("camera"))
+        val permissions = patchWith(mods).startElements()
             .filter { editor.elementName(it) == "uses-permission" }
             .mapNotNull { editor.findAttribute(it, ManifestRules.ANDROID_NAMESPACE, "name") }
             .mapNotNull { editor.string(it.rawValue) }
@@ -93,7 +132,7 @@ class ManifestPatcherTest {
 
     @Test
     fun hidingTheLauncherIconRemovesTheLauncherIntentFilter() {
-        val editor = patch(CloneMods(hideLauncherIcon = true))
+        val editor = patchWith(CloneMods(hideLauncherIcon = true))
         assertTrue(
             editor.startElements().none { editor.elementName(it) == "intent-filter" }
         )
@@ -103,7 +142,7 @@ class ManifestPatcherTest {
 
     @Test
     fun anEmptyModListLeavesTheManifestAlone() {
-        val editor = patch(CloneMods())
+        val editor = patchWith(CloneMods())
         val manifest = element(editor, "manifest")
         assertNull(editor.findAttribute(manifest!!, ManifestRules.ANDROID_NAMESPACE, "versionName"))
         assertNull(value(editor, element(editor, "application"), "allowBackup"))

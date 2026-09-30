@@ -60,8 +60,14 @@ jobs:
           if [ "${{ steps.tests.outcome }}" = "success" ]; then
             echo "::notice title=Unit tests::all engine unit tests passed"
           else
-            echo "::error title=Unit tests failed::$(grep -E 'FAILED|tests completed|e: |What went wrong|Caused by' test.log | head -20 | tr '\n' '~')"
-            grep -E "tests completed|FAILED|expected" test.log | head -25
+            # The JUnit XML reports carry the full assertion messages and stack traces.
+            DETAIL=$(grep -h -A 6 "<failure" app/build/test-results/testDebugUnitTest/*.xml 2>/dev/null | head -60 | tr '\n' '~')
+            if [ -z "$DETAIL" ]; then
+              DETAIL=$(grep -E -A 5 'FAILED|AssertionError|Exception' test.log | head -40 | tr '\n' '~')
+            fi
+            echo "::error title=Unit tests failed::$DETAIL"
+            grep -h -A 6 "<failure" app/build/test-results/testDebugUnitTest/*.xml 2>/dev/null | head -60
+            grep -E "tests completed|FAILED" test.log | head -20
           fi
 
       # ------------------------------------------------------------------ real world APK smoke test
@@ -229,6 +235,9 @@ jobs:
             echo
             echo "## test.log (failure lines)"
             grep -E "FAILED|expected|Caused by|tests completed|e: " test.log 2>/dev/null | head -60
+            echo
+            echo "## junit failure details"
+            grep -h -A 6 "<failure" app/build/test-results/testDebugUnitTest/*.xml 2>/dev/null | head -80
             echo
             echo "## smoke.log (tail)"
             tail -120 smoke.log 2>/dev/null
