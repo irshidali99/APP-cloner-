@@ -11,7 +11,9 @@ data class CloneConfig(
     val badgeNumber: Int? = null,
     val badgeColor: Long = 0xFF4F46E5L,
     val rotationDegrees: Float = 0f,
-    val invertColors: Boolean = false
+    val invertColors: Boolean = false,
+    /** Manifest level clone mods (launcher, privacy, storage, version, permissions). */
+    val mods: CloneMods = CloneMods()
 ) {
     fun validate(): ValidationResult {
         val trimmedName = cloneName.trim()

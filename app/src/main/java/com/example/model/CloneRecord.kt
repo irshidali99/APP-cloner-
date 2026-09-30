@@ -30,7 +30,9 @@ data class CloneRecord(
     /** SHA-256 fingerprint of the certificate that signed this clone. */
     val certificateFingerprint: String = "",
     /** Split names of a bundle clone (empty for single APK clones). */
-    val splitNames: String = ""
+    val splitNames: String = "",
+    /** Human readable list of the clone mods that were applied to this clone. */
+    val modsSummary: String = ""
 ) {
     val isInstalled: Boolean
         get() = installStatus == STATUS_INSTALLED

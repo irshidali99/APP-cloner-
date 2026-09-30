@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.model.CloneConfig
+import com.example.model.ClonePermissionGroups
 import com.example.model.InstalledApp
 import com.example.ui.MainViewModel
 import com.example.ui.components.AppIconView
@@ -266,6 +267,145 @@ fun CloneSetupScreen(
                                 "screen.",
                             style = MaterialTheme.typography.labelSmall,
                             color = Color(0xFF9A3412)
+                        )
+                    }
+                }
+            }
+
+            // ------------------------------------------------ Clone mods (manifest level features)
+            val mods by viewModel.cloneMods.collectAsStateWithLifecycle()
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("clone_mods_card")
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Security,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Clone mods",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Applied to the clone's manifest while it is built. The original app stays " +
+                            "untouched; these settings need no root and no code changes.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    ModSwitch(
+                        title = "Hide launcher icon",
+                        subtitle = "Stealth: open the clone from App Cloner, no icon on the home screen",
+                        checked = mods.hideLauncherIcon
+                    ) { value -> viewModel.updateMods { it.copy(hideLauncherIcon = value) } }
+                    ModSwitch(
+                        title = "Hide from recent apps",
+                        subtitle = "Keeps the clone out of the recents list",
+                        checked = mods.excludeFromRecents
+                    ) { value -> viewModel.updateMods { it.copy(excludeFromRecents = value) } }
+                    ModSwitch(
+                        title = "Install to SD card",
+                        subtitle = "Prefers external storage as install location",
+                        checked = mods.installToSdCard
+                    ) { value -> viewModel.updateMods { it.copy(installToSdCard = value) } }
+                    ModSwitch(
+                        title = "Disable backup",
+                        subtitle = "No cloud backup or device transfer for the clone",
+                        checked = mods.disableBackup
+                    ) { value -> viewModel.updateMods { it.copy(disableBackup = value) } }
+                    ModSwitch(
+                        title = "Block unencrypted traffic",
+                        subtitle = "Refuses plain http connections",
+                        checked = mods.disableCleartextTraffic
+                    ) { value -> viewModel.updateMods { it.copy(disableCleartextTraffic = value) } }
+                    ModSwitch(
+                        title = "Lock rotation (portrait)",
+                        subtitle = "Every activity stays in portrait",
+                        checked = mods.lockRotation
+                    ) { value -> viewModel.updateMods { it.copy(lockRotation = value) } }
+                    ModSwitch(
+                        title = "Multi window",
+                        subtitle = "Allows split screen and free-form windows",
+                        checked = mods.multiWindow
+                    ) { value -> viewModel.updateMods { it.copy(multiWindow = value) } }
+                    ModSwitch(
+                        title = "Picture in picture",
+                        subtitle = "Declares PiP support for the clone",
+                        checked = mods.pictureInPicture
+                    ) { value -> viewModel.updateMods { it.copy(pictureInPicture = value) } }
+                    ModSwitch(
+                        title = "Kiosk mode",
+                        subtitle = "Lock task mode (needs device owner to be enforced)",
+                        checked = mods.kioskMode
+                    ) { value -> viewModel.updateMods { it.copy(kioskMode = value) } }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Remove permissions from the clone",
+                        fontWeight = FontWeight.Medium,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        for (group in ClonePermissionGroups.GROUPS.keys) {
+                            val selected = group in mods.removePermissionGroups
+                            FilterChip(
+                                selected = selected,
+                                onClick = { viewModel.togglePermissionGroup(group) },
+                                label = { Text(ClonePermissionGroups.label(group), fontSize = 12.sp) }
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "A removed permission can never be requested by the clone; the original app " +
+                            "keeps its own permissions.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = mods.versionName.orEmpty(),
+                            onValueChange = { value ->
+                                viewModel.updateMods { it.copy(versionName = value.ifBlank { null }) }
+                            },
+                            label = { Text("Version name") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = mods.versionCode?.toString().orEmpty(),
+                            onValueChange = { value ->
+                                viewModel.updateMods {
+                                    it.copy(versionCode = value.filter { c -> c.isDigit() }.ifBlank { null }?.toLongOrNull())
+                                }
+                            },
+                            label = { Text("Version code") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
                         )
                     }
                 }
@@ -541,5 +681,29 @@ fun CloneSetupScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+}
+
+/** One labelled switch of the clone mods card. */
+@Composable
+private fun ModSwitch(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }

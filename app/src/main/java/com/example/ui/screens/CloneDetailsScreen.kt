@@ -232,6 +232,14 @@ fun CloneDetailsScreen(
                                 ) Color(0xFFFFF7ED) else Color(0xFFEEF2FF)
                             )
                         }
+                        if (record.modsSummary.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Clone mods: ${record.modsSummary}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                         if (record.certificateFingerprint.isNotEmpty()) {
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(

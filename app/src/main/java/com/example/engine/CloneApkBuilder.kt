@@ -239,7 +239,8 @@ class CloneApkBuilder(
                         outputDirectory = unsignedDirectory,
                         newPackage = config.clonePackageId,
                         newLabel = config.cloneName,
-                        iconPng = iconPng
+                        iconPng = iconPng,
+                        mods = config.mods
                     ),
                     certificate = identity.certificate,
                     privateKey = identity.privateKey
@@ -258,7 +259,8 @@ class CloneApkBuilder(
                         outputApk = output,
                         newPackage = config.clonePackageId,
                         newLabel = config.cloneName,
-                        iconPng = iconPng
+                        iconPng = iconPng,
+                        mods = config.mods
                     ),
                     certificate = identity.certificate,
                     privateKey = identity.privateKey
@@ -271,6 +273,9 @@ class CloneApkBuilder(
             log("Resource table re-targeted (${report.entriesWritten} entries copied).")
             if (report.renamedPermissions.isNotEmpty()) {
                 log("App-owned permissions re-targeted: ${report.renamedPermissions.joinToString()}")
+            }
+            if (report.appliedMods.isNotEmpty()) {
+                log("Clone mods applied: ${report.appliedMods.joinToString()}")
             }
             if (report.iconEntriesReplaced.isNotEmpty()) {
                 log("Launcher icon replaced: ${report.iconEntriesReplaced.joinToString()}")

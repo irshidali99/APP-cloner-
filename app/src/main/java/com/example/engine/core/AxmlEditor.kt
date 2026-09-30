@@ -49,7 +49,7 @@ sealed class AxmlNode {
  */
 class AxmlEditor private constructor(
     val pool: StringPool,
-    val resourceIds: IntArray,
+    var resourceIds: IntArray,
     val nodes: MutableList<AxmlNode>
 ) {
     /** Resolves a pool index to its string, `null` for "no index". */
@@ -95,6 +95,65 @@ class AxmlEditor private constructor(
         attribute.rawValue = index
         attribute.valueType = ResValueType.STRING
         attribute.valueData = index
+    }
+
+    /** Replaces an attribute value with an integer (plain int, enum, flags or boolean). */
+    fun setIntAttribute(attribute: AxmlAttribute, valueType: Int, value: Int) {
+        attribute.rawValue = value
+        attribute.valueType = valueType
+        attribute.valueData = value
+    }
+
+    /** Resource id of an attribute, resolved through its name index. */
+    fun attributeResourceId(attribute: AxmlAttribute): Int = attributeResourceId(attribute.name)
+
+    /**
+     * Adds an attribute the original manifest does not have yet.
+     *
+     * The attribute name is appended to the string pool and the resource map is extended: the platform
+     * looks framework attributes up by *resource id*, not by name, so a missing map entry would make the
+     * attribute silently ignored. Attributes are inserted sorted by resource id, the order `aapt2` emits.
+     */
+    fun addAttribute(
+        element: AxmlNode.StartElement,
+        namespaceUri: String?,
+        name: String,
+        resourceId: Int,
+        valueType: Int,
+        valueData: Int,
+        rawValue: Int = valueData
+    ): AxmlAttribute {
+        val nameIndex = intern(name)
+        ensureResourceId(nameIndex, resourceId)
+        val namespaceIndex = if (namespaceUri == null) NO_INDEX else intern(namespaceUri)
+        val attribute = AxmlAttribute(namespaceIndex, nameIndex, rawValue, valueType, valueData)
+        val position = element.attributes.indexOfFirst { existing ->
+            attributeResourceId(existing) > resourceId
+        }
+        if (position < 0) element.attributes.add(attribute) else element.attributes.add(position, attribute)
+        return attribute
+    }
+
+    /** Removes an element together with everything nested inside it. */
+    fun removeElement(element: AxmlNode.StartElement) {
+        val start = nodes.indexOf(element)
+        if (start < 0) return
+        var depth = 0
+        var index = start
+        while (index < nodes.size) {
+            when (nodes[index]) {
+                is AxmlNode.StartElement -> depth++
+                is AxmlNode.EndElement -> {
+                    depth--
+                    if (depth == 0) {
+                        repeat(index - start + 1) { nodes.removeAt(start) }
+                        return
+                    }
+                }
+                else -> Unit
+            }
+            index++
+        }
     }
 
     /** Serialises the document back into a binary XML file. */

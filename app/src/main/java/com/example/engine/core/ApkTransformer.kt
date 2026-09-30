@@ -1,5 +1,6 @@
 package com.example.engine.core
 
+import com.example.model.CloneMods
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
@@ -36,7 +37,9 @@ data class CloneRequest(
      * Optional launcher icon to inject, already rendered by the platform layer (for example with a badge).
      * The resource it replaces is resolved from the manifest's `android:icon` attribute.
      */
-    val iconPng: ByteArray? = null
+    val iconPng: ByteArray? = null,
+    /** Optional clone mods (launcher, privacy, storage, version, permissions). */
+    val mods: CloneMods = CloneMods()
 )
 
 /** Which part of an app bundle an APK is. */
@@ -64,7 +67,9 @@ data class CloneReport(
     /** Value of the `split` attribute for split APKs, `null` for the base. */
     val splitName: String? = null,
     /** Permissions owned by the original app that were re-targeted to the new package name. */
-    val renamedPermissions: List<String> = emptyList()
+    val renamedPermissions: List<String> = emptyList(),
+    /** Clone mods that were applied to this part, in human readable form. */
+    val appliedMods: List<String> = emptyList()
 )
 
 /** An app bundle to clone: the base APK plus every configuration/feature split. */
@@ -74,7 +79,8 @@ data class CloneBundleRequest(
     val outputDirectory: File,
     val newPackage: String,
     val newLabel: String? = null,
-    val iconPng: ByteArray? = null
+    val iconPng: ByteArray? = null,
+    val mods: CloneMods = CloneMods()
 )
 
 /** Result of cloning a whole bundle. */
@@ -158,6 +164,14 @@ object ApkTransformer {
                 cloneLabel = if (role == CloneRole.BASE) request.newLabel else null,
                 retargetComponents = role == CloneRole.BASE
             )
+            // Clone mods are applied after the identity rewrite: they only add or change manifest
+            // attributes, so the two steps cannot interfere with each other.
+            val appliedMods = ManifestPatcher.apply(
+                editor = editor,
+                mods = request.mods,
+                baseOnly = role == CloneRole.BASE
+            )
+
             if (rewriteReport.foreignAuthorities.isNotEmpty()) {
                 warnings.add(
                     "provider authorities outside the package were moved into the clone's namespace " +
@@ -268,7 +282,8 @@ object ApkTransformer {
                 warnings = warnings,
                 role = role,
                 splitName = readSplitName(editor),
-                renamedPermissions = rewriteReport.renamedPermissions
+                renamedPermissions = rewriteReport.renamedPermissions,
+                appliedMods = appliedMods
             )
         } finally {
             archive.close()
@@ -298,7 +313,8 @@ object ApkTransformer {
                 outputApk = baseOutput,
                 newPackage = request.newPackage,
                 newLabel = request.newLabel,
-                iconPng = request.iconPng
+                iconPng = request.iconPng,
+                mods = request.mods
             ),
             certificate = certificate,
             privateKey = privateKey,
@@ -320,7 +336,8 @@ object ApkTransformer {
                         outputApk = File(request.outputDirectory, split.name),
                         newPackage = request.newPackage,
                         newLabel = null,
-                        iconPng = null
+                        iconPng = null,
+                        mods = request.mods
                     ),
                     certificate = certificate,
                     privateKey = privateKey,

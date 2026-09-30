@@ -25,6 +25,9 @@ object TestFixtures {
     /** The kind of permission modern build tools add to every app; it must move with the package. */
     const val PERMISSION_NAME = "$ORIGINAL_PACKAGE.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
 
+    /** A dangerous platform permission, used to test permission removal. */
+    const val DANGEROUS_PERMISSION = "android.permission.CAMERA"
+
     private const val ATTR_NAME = 0x01010003
     private const val ATTR_LABEL = 0x01010001
     private const val ATTR_ICON = 0x01010002
@@ -35,6 +38,7 @@ object TestFixtures {
     private const val TYPE_STRING = 0x03
     private const val TYPE_REFERENCE = 0x01
     private const val TYPE_INT_BOOLEAN = 0x12
+    private const val TYPE_INT_DEC = 0x10
 
     /** String pool of the fixture manifest, attribute names first so the resource map stays valid. */
     private val manifestStrings = listOf(
@@ -42,7 +46,10 @@ object TestFixtures {
         "android", ANDROID_NAMESPACE,
         "manifest", "application", "provider", "activity",
         ORIGINAL_PACKAGE, ".DataProvider", PROVIDER_AUTHORITY, ".MainActivity", ORIGINAL_LABEL,
-        "permission", "uses-permission", "sharedUserId", PERMISSION_NAME
+        "permission", "uses-permission", "sharedUserId", PERMISSION_NAME,
+        "uses-sdk", "versionCode", "versionName", "minSdkVersion", "targetSdkVersion",
+        "intent-filter", "action", "category",
+        "android.intent.action.MAIN", "android.intent.category.LAUNCHER", DANGEROUS_PERMISSION
     )
 
     private fun stringIndex(value: String): Int = manifestStrings.indexOf(value)
@@ -103,6 +110,23 @@ object TestFixtures {
         addNode(endElement("permission"))
         addNode(
             startElement(
+                "uses-sdk",
+                listOf(
+                    attribute(ANDROID_NAMESPACE, "minSdkVersion", TYPE_INT_DEC, 21),
+                    attribute(ANDROID_NAMESPACE, "targetSdkVersion", TYPE_INT_DEC, 34)
+                )
+            )
+        )
+        addNode(endElement("uses-sdk"))
+        addNode(
+            startElement(
+                "uses-permission",
+                listOf(attribute(ANDROID_NAMESPACE, "name", TYPE_STRING, index(DANGEROUS_PERMISSION)))
+            )
+        )
+        addNode(endElement("uses-permission"))
+        addNode(
+            startElement(
                 "uses-permission",
                 listOf(
                     attribute(ANDROID_NAMESPACE, "name", TYPE_STRING, index(PERMISSION_NAME), strings)
@@ -136,6 +160,34 @@ object TestFixtures {
                 listOf(attribute(ANDROID_NAMESPACE, "name", TYPE_STRING, index(".MainActivity")))
             )
         )
+        addNode(
+            startElement(
+                "intent-filter",
+                listOf(
+                    attribute(ANDROID_NAMESPACE, "label", TYPE_STRING, index(ORIGINAL_LABEL)),
+                    attribute(ANDROID_NAMESPACE, "priority", TYPE_INT_DEC, 0)
+                )
+            )
+        )
+        addNode(
+            startElement(
+                "action",
+                listOf(
+                    attribute(ANDROID_NAMESPACE, "name", TYPE_STRING, index("android.intent.action.MAIN"))
+                )
+            )
+        )
+        addNode(endElement("action"))
+        addNode(
+            startElement(
+                "category",
+                listOf(
+                    attribute(ANDROID_NAMESPACE, "name", TYPE_STRING, index("android.intent.category.LAUNCHER"))
+                )
+            )
+        )
+        addNode(endElement("category"))
+        addNode(endElement("intent-filter"))
         addNode(endElement("activity"))
         addNode(endElement("application"))
         addNode(endElement("manifest"))

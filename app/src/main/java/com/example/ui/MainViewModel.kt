@@ -7,6 +7,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.AppClonerApplication
 import com.example.model.CloneConfig
+import com.example.model.CloneMods
 import com.example.model.CloneRecord
 import com.example.model.CompatibilityReport
 import com.example.model.InstalledApp
@@ -113,6 +114,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val rotationDegrees = MutableStateFlow(0f)
     val invertColors = MutableStateFlow(false)
 
+    /** Clone mods selected on the setup screen; applied to the manifest while the clone is built. */
+    val cloneMods = MutableStateFlow(CloneMods())
+
+    fun updateMods(transform: (CloneMods) -> CloneMods) {
+        cloneMods.value = transform(cloneMods.value)
+    }
+
+    fun togglePermissionGroup(group: String) {
+        updateMods { mods ->
+            val groups = mods.removePermissionGroups.toMutableSet()
+            if (!groups.add(group)) groups.remove(group)
+            mods.copy(removePermissionGroups = groups)
+        }
+    }
+
     // Cloning execution state
     private var cloningJob: Job? = null
     private val _cloningProgress = MutableStateFlow(PipelineProgress())
@@ -188,6 +204,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             badgeColor.value = 0xFF4F46E5L
             rotationDegrees.value = 0f
             invertColors.value = false
+            cloneMods.value = CloneMods()
         }
     }
 
@@ -201,7 +218,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             badgeNumber = badgeNumber.value,
             badgeColor = badgeColor.value,
             rotationDegrees = rotationDegrees.value,
-            invertColors = invertColors.value
+            invertColors = invertColors.value,
+            mods = cloneMods.value
         )
 
         val validation = config.validate()
@@ -252,7 +270,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     isVerified = outcome.isVerified,
                     signatureScheme = signatureSchemeOf(outcome),
                     certificateFingerprint = outcome.certificateFingerprint,
-                    splitNames = outcome.splitNames.joinToString(", ")
+                    splitNames = outcome.splitNames.joinToString(", "),
+                    modsSummary = outcome.report.appliedMods.joinToString(", ")
                 )
                 val id = cloneRepository.saveClone(newRecord)
                 val savedRecord = newRecord.copy(id = id)
