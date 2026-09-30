@@ -38,18 +38,27 @@ data class CompatibilityReport(
         /** True when [packageName] is a known app that refuses to run after being re-signed. */
         fun isSelfVerifying(packageName: String): Boolean = packageName in SELF_VERIFYING_PACKAGES
 
-        /** Explanation shown in the app for a self-verifying app. */
+        /**
+         * Explanation shown in the app for a self-verifying app, including why container apps behave
+         * differently.
+         */
         fun selfVerifyingNotice(appLabel: String): String =
-            "$appLabel checks its own APK signature when it starts. A clone is signed with a new " +
-                "certificate (the original developer's key is private), so the check fails and the app " +
-                "closes itself right after its first screen. This is deliberate protection on their side; " +
-                "breaking it is not something this app does.\n\n" +
-                "You do not need a clone for this:\n" +
-                "• " + "WhatsApp itself: Settings → tap your name → \"Add account\" (two accounts in one " +
-                "official app, needs a second phone number).\n" +
-                "• Your phone's built-in Dual Apps / Dual Messenger / Parallel Apps keeps the app signed " +
-                "by its developer, so it runs normally.\n" +
-                "• WhatsApp Business can be installed next to normal WhatsApp, with its own number."
+            "$appLabel checks the signature of its own APK while starting. A clone is a real, separate " +
+                "app and therefore signed with a new certificate (the developer's key is private), so the " +
+                "check fails and the app closes itself right after its first screen. Apps that only look " +
+                "at their own package name work fine as clones; apps that check their signature do not.\n\n" +
+                "What does work instead:\n" +
+                "1. Built-in multi account: in $appLabel open Settings, tap your name, choose \"Add \" + " +
+                "\"account\" (two accounts in one official app, needs a second phone number).\n" +
+                "2. Your phone's own Dual Apps / Dual Messenger / Parallel Apps / Secure Folder: it keeps " +
+                "the app signed by its developer, so it runs normally.\n" +
+                "3. WhatsApp Business can be installed next to the normal app with its own number.\n\n" +
+                "Why a container app (Parallel Space, Clone Master, Dual Space) can run it: those apps do " +
+                "not build a new clone - they let the original, unchanged APK run inside their own process, " +
+                "so the original signature is still there. That is a different kind of product: the app " +
+                "only lives inside the container, it is not a normal installed app, and everything " +
+                "disappears with the container. This app creates true independent copies, which is exactly " +
+                "why it cannot run an app that verifies its own signature."
 
         fun evaluate(app: InstalledApp): CompatibilityReport {
             if (app.isSystemApp) {
