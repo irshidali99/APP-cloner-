@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.LibraryAdd
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.Info
@@ -73,6 +74,7 @@ import com.example.ui.components.SystemAppBadge
 fun InstalledAppsScreen(
     viewModel: MainViewModel,
     onNavigateToCloneSetup: (InstalledApp) -> Unit,
+    onNavigateToBatch: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val apps by viewModel.filteredInstalledApps.collectAsStateWithLifecycle()
@@ -110,6 +112,15 @@ fun InstalledAppsScreen(
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = onNavigateToBatch,
+                        modifier = Modifier.testTag("open_batch_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.LibraryAdd,
+                            contentDescription = "Batch clone"
+                        )
+                    }
                     IconButton(
                         onClick = { viewModel.loadInstalledApps() },
                         modifier = Modifier.testTag("refresh_apps_button")

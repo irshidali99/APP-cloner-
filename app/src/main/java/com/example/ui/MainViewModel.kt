@@ -6,8 +6,12 @@ import android.content.Intent
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.AppClonerApplication
+import com.example.model.BatchItem
+import com.example.model.BatchProgress
+import com.example.model.BatchState
 import com.example.model.CloneConfig
 import com.example.model.CloneMods
+import com.example.model.ClonePreset
 import com.example.model.CloneRecord
 import com.example.model.CompatibilityReport
 import com.example.model.InstalledApp
@@ -16,6 +20,7 @@ import com.example.model.PipelineStage
 import com.example.model.SettingsData
 import com.example.model.ThemeMode
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -129,6 +134,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Saved clone setups (presets). */
+    val presets: StateFlow<List<ClonePreset>> = cloneRepository.allPresets.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
+
+    /** Name pattern used when a preset is saved, and the index of the clone currently being set up. */
+    private var setupCloneIndex: Int = 1
+    private var setupSourceLabel: String = ""
+
+    // Batch cloning state
+    private val _batchSelection = MutableStateFlow<Set<String>>(emptySet())
+    val batchSelection = _batchSelection.asStateFlow()
+
+    private val _batchProgress = MutableStateFlow(BatchProgress())
+    val batchProgress = _batchProgress.asStateFlow()
+
+    private var batchJob: Job? = null
+
     // Cloning execution state
     private var cloningJob: Job? = null
     private val _cloningProgress = MutableStateFlow(PipelineProgress())
@@ -198,6 +223,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 nextCloneIndex
             )
 
+            setupCloneIndex = nextCloneIndex
+            setupSourceLabel = installedApp.label
+            activePresetName.value = null
             cloneDisplayName.value = defaultName
             clonePackageId.value = defaultPkg
             badgeNumber.value = nextCloneIndex
@@ -207,6 +235,216 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             cloneMods.value = CloneMods()
         }
     }
+
+    // ------------------------------------------------------------------ presets --------
+
+    /**
+     * Applies a preset to the app that is currently being set up.
+     *
+     * The clone number is resolved for this app first, so the preset's `{app}` / `{n}` placeholders produce
+     * a name that really is free on the device.
+     */
+    fun applyPreset(preset: ClonePreset) {
+        val app = selectedAppForSetup.value ?: return
+        viewModelScope.launch {
+            val index = freeCloneIndexFor(app)
+            cloneDisplayName.value = preset.cloneName(app.label, index)
+            clonePackageId.value = CloneConfig.generateDefaultPackageId(app.packageName, index)
+            badgeNumber.value = index
+            badgeColor.value = preset.badgeColor
+            rotationDegrees.value = if (preset.rotateIcon) ((index - 1) % 8) * 12f else 0f
+            invertColors.value = preset.invertColors
+            cloneMods.value = preset.toMods(
+                versionName = if (preset.versionNameSuffix.isBlank()) {
+                    null
+                } else {
+                    app.versionName + preset.versionNameSuffix
+                }
+            )
+            activePresetName.value = preset.name
+        }
+    }
+
+    /** Name of the preset that was applied last, shown on the setup screen. */
+    val activePresetName = MutableStateFlow<String?>(null)
+
+    /** Saves the settings currently shown on the setup screen as a reusable preset. */
+    fun saveCurrentSettingsAsPreset(name: String) {
+        val app = selectedAppForSetup.value
+        val cleanName = name.trim().ifEmpty { "Preset ${presets.value.size + 1}" }
+        val pattern = ClonePreset.derivePattern(
+            cloneName = cloneDisplayName.value,
+            sourceLabel = app?.label ?: setupSourceLabel,
+            cloneIndex = setupCloneIndex
+        )
+        val preset = ClonePreset(name = cleanName).withSettings(
+            namePattern = pattern,
+            badgeColor = badgeColor.value,
+            rotateIcon = rotationDegrees.value != 0f,
+            invertColors = invertColors.value,
+            mods = cloneMods.value,
+            versionNameSuffix = ""
+        )
+        viewModelScope.launch { cloneRepository.savePreset(preset) }
+        activePresetName.value = cleanName
+    }
+
+    fun deletePreset(id: Long) {
+        viewModelScope.launch { cloneRepository.deletePreset(id) }
+    }
+
+    /** The next free clone number for [app], taking installed packages and the history into account. */
+    private suspend fun freeCloneIndexFor(app: InstalledApp): Int {
+        val records = cloneRepository.getClonesForSource(app.packageName).first()
+        val used = (
+            records.mapNotNull { CloneConfig.cloneIndexSuffix(it.clonePackageId, app.packageName) } +
+                packageInspector.installedCloneIndexes(app.packageName)
+            ).toSet()
+        return CloneConfig.nextFreeCloneIndex(
+            usedIndexes = used,
+            isInstalled = { candidate -> packageInspector.isPackageInstalled(candidate) },
+            sourcePackage = app.packageName
+        )
+    }
+
+    // ------------------------------------------------------------------ batch cloning --------
+
+    fun toggleBatchSelection(packageName: String) {
+        val selection = _batchSelection.value.toMutableSet()
+        if (!selection.add(packageName)) selection.remove(packageName)
+        _batchSelection.value = selection
+    }
+
+    fun setBatchSelection(packageNames: Set<String>) {
+        _batchSelection.value = packageNames
+    }
+
+    /**
+     * Clones every selected app one after another with the settings that are currently configured.
+     *
+     * Cloning is the slow part and Android asks for confirmation for every installation, so a batch first
+     * builds all clones and then hands them to the installer in a queue (see [InstallGatewayActivity]).
+     */
+    fun startBatch(apps: List<InstalledApp>) {
+        if (apps.isEmpty() || batchJob?.isActive == true) return
+        val mods = cloneMods.value
+        val colorValue = badgeColor.value
+        val rotation = rotationDegrees.value
+        val invert = invertColors.value
+        val autoNumber = settings.value.autoNumber
+
+        _batchProgress.value = BatchProgress(
+            items = apps.map { BatchItem(packageName = it.packageName, label = it.label) },
+            isRunning = true
+        )
+
+        batchJob = viewModelScope.launch {
+            for (app in apps) {
+                if (!isActive) break
+                updateBatchItem(app.packageName) { item -> item.copy(state = BatchState.CLONING) }
+                _batchProgress.value = _batchProgress.value.copy(currentLabel = app.label)
+
+                val compatibility = cloneApkBuilder.checkCompatibility(app)
+                if (!compatibility.isSupported) {
+                    updateBatchItem(app.packageName) { item ->
+                        item.copy(state = BatchState.FAILED, message = compatibility.formatDescription)
+                    }
+                    continue
+                }
+
+                val index = freeCloneIndexFor(app)
+                val cloneName = CloneConfig.generateDefaultCloneName(app.label, index, autoNumber)
+                val presetPattern = presets.value.firstOrNull { it.name == activePresetName.value }
+                    ?.let { preset -> preset.cloneName(app.label, index) }
+                val finalName = presetPattern ?: cloneName
+                val config = CloneConfig(
+                    sourcePackage = app.packageName,
+                    sourceAppName = app.label,
+                    cloneName = finalName,
+                    clonePackageId = CloneConfig.generateDefaultPackageId(app.packageName, index),
+                    badgeNumber = index,
+                    badgeColor = colorValue,
+                    rotationDegrees = rotation,
+                    invertColors = invert,
+                    mods = mods
+                )
+
+                val result = cloneApkBuilder.executeClonePipeline(
+                    context = getApplication(),
+                    sourceApp = app,
+                    config = config
+                ) { }
+                result.onSuccess { outcome ->
+                    val record = CloneRecord(
+                        cloneName = config.cloneName,
+                        clonePackageId = config.clonePackageId,
+                        sourceAppName = app.label,
+                        sourcePackage = app.packageName,
+                        sourceVersion = app.versionName,
+                        apkFilePath = outcome.apkFile.absolutePath,
+                        apkSizeBytes = outcome.apkFile.length(),
+                        installStatus = CloneRecord.STATUS_APK_READY,
+                        badgeNumber = config.badgeNumber,
+                        badgeColor = config.badgeColor,
+                        rotationDegrees = config.rotationDegrees,
+                        invertColors = config.invertColors,
+                        isVerified = outcome.isVerified,
+                        signatureScheme = signatureSchemeOf(outcome),
+                        certificateFingerprint = outcome.certificateFingerprint,
+                        splitNames = outcome.splitNames.joinToString(", "),
+                        modsSummary = outcome.report.appliedMods.joinToString(", ")
+                    )
+                    cloneRepository.saveClone(record)
+                    updateBatchItem(app.packageName) { item ->
+                        item.copy(
+                            state = BatchState.READY,
+                            cloneName = config.cloneName,
+                            clonePackageId = config.clonePackageId,
+                            apkPath = outcome.apkFile.absolutePath,
+                            message = if (outcome.isBundle) {
+                                "bundle: base + ${outcome.bundleParts.size - 1} split(s)"
+                            } else {
+                                "single APK"
+                            }
+                        )
+                    }
+                }.onFailure { error ->
+                    updateBatchItem(app.packageName) { item ->
+                        item.copy(
+                            state = BatchState.FAILED,
+                            message = error.message ?: error::class.java.simpleName
+                        )
+                    }
+                }
+            }
+            _batchProgress.value = _batchProgress.value.copy(isRunning = false, currentLabel = "")
+            refreshStorageUsage()
+        }
+    }
+
+    fun cancelBatch() {
+        batchJob?.cancel()
+        batchJob = null
+        val items = _batchProgress.value.items.map { item ->
+            if (item.isFinished) item else item.copy(state = BatchState.SKIPPED, message = "cancelled")
+        }
+        _batchProgress.value = _batchProgress.value.copy(items = items, isRunning = false, currentLabel = "")
+    }
+
+    fun clearBatch() {
+        _batchProgress.value = BatchProgress()
+    }
+
+    private fun updateBatchItem(packageName: String, transform: (BatchItem) -> BatchItem) {
+        val items = _batchProgress.value.items.map { item ->
+            if (item.packageName == packageName) transform(item) else item
+        }
+        _batchProgress.value = _batchProgress.value.copy(items = items)
+    }
+
+    /** Queue of clones to install one after another, `name` to `apk path`. */
+    fun installQueueOfReadyClones(): List<Pair<String, String>> =
+        _batchProgress.value.installable.map { it.cloneName to it.apkPath }
 
     fun startCloning(onStarted: () -> Unit) {
         val app = selectedAppForSetup.value ?: return

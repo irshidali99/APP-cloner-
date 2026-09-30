@@ -48,6 +48,10 @@ class InstallGatewayActivity : Activity() {
 
         val apkPath = intent.getStringExtra(EXTRA_APK_PATH)
         cloneName = intent.getStringExtra(EXTRA_CLONE_NAME) ?: "clone"
+        // A batch hands over one clone at a time: after a successful install the next one starts, so the
+        // user only has to confirm each system dialog.
+        pendingNames = intent.getStringArrayListExtra(EXTRA_QUEUE_NAMES) ?: ArrayList()
+        pendingPaths = intent.getStringArrayListExtra(EXTRA_QUEUE_PATHS) ?: ArrayList()
         val baseApk = apkPath?.let { File(it) }
 
         if (baseApk == null || !baseApk.isFile) {
@@ -144,6 +148,8 @@ class InstallGatewayActivity : Activity() {
     }
 
     private var expectedSplitNames: List<String> = emptyList()
+    private var pendingNames: ArrayList<String> = ArrayList()
+    private var pendingPaths: ArrayList<String> = ArrayList()
 
     private fun isInstalled(packageName: String): Boolean = try {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -266,11 +272,26 @@ class InstallGatewayActivity : Activity() {
                             "or share the base APK by itself."
                     )
                 } else {
-                    Toast.makeText(
-                        this,
-                        "Clone installed${if (packageName != null) " ($packageName)" else ""}",
-                        Toast.LENGTH_LONG
-                    ).show()
+                    val nextName = pendingNames.firstOrNull()
+                    val nextPath = pendingPaths.firstOrNull()
+                    if (nextName != null && nextPath != null) {
+                        pendingNames.removeAt(0)
+                        pendingPaths.removeAt(0)
+                        Toast.makeText(this, "Installed $cloneName, next: $nextName", Toast.LENGTH_SHORT).show()
+                        val next = intent(this, InstallGatewayActivity::class.java).apply {
+                            putExtra(EXTRA_APK_PATH, nextPath)
+                            putExtra(EXTRA_CLONE_NAME, nextName)
+                            putStringArrayListExtra(EXTRA_QUEUE_NAMES, pendingNames)
+                            putStringArrayListExtra(EXTRA_QUEUE_PATHS, pendingPaths)
+                        }
+                        startActivity(next)
+                    } else {
+                        Toast.makeText(
+                            this,
+                            "Clone installed${if (packageName != null) " ($packageName)" else ""}",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
                     setResult(RESULT_OK)
                     finish()
                 }
@@ -351,6 +372,8 @@ class InstallGatewayActivity : Activity() {
 
         const val EXTRA_APK_PATH = "apk_path"
         const val EXTRA_CLONE_NAME = "clone_name"
+        const val EXTRA_QUEUE_NAMES = "queue_names"
+        const val EXTRA_QUEUE_PATHS = "queue_paths"
 
         /** Intent that runs the whole install flow in this activity. */
         fun intent(context: Context, apkFile: File, cloneName: String): Intent =
@@ -358,5 +381,24 @@ class InstallGatewayActivity : Activity() {
                 putExtra(EXTRA_APK_PATH, apkFile.absolutePath)
                 putExtra(EXTRA_CLONE_NAME, cloneName)
             }
+
+        /**
+         * Intent that installs a whole batch: [first] is installed now, everything in [queue] follows after
+         * each successful installation, so the user confirms one system dialog after another.
+         */
+        fun intentForQueue(
+            context: Context,
+            first: Pair<String, String>,
+            queue: List<Pair<String, String>>
+        ): Intent {
+            val names = ArrayList(queue.map { it.first })
+            val paths = ArrayList(queue.map { it.second })
+            return Intent(context, InstallGatewayActivity::class.java).apply {
+                putExtra(EXTRA_APK_PATH, first.second)
+                putExtra(EXTRA_CLONE_NAME, first.first)
+                putStringArrayListExtra(EXTRA_QUEUE_NAMES, names)
+                putStringArrayListExtra(EXTRA_QUEUE_PATHS, paths)
+            }
+        }
     }
 }

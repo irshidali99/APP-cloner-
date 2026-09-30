@@ -22,6 +22,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ColorLens
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.RotateRight
 import androidx.compose.material.icons.filled.Security
@@ -31,7 +32,10 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.InputChip
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -270,6 +274,126 @@ fun CloneSetupScreen(
                         )
                     }
                 }
+            }
+
+            // ------------------------------------------------ Presets (saved clone setups)
+            val presets by viewModel.presets.collectAsStateWithLifecycle()
+            val activePreset by viewModel.activePresetName.collectAsStateWithLifecycle()
+            var showSavePresetDialog by remember { mutableStateOf(false) }
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("presets_card")
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Star,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Presets",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleSmall,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(
+                            onClick = { showSavePresetDialog = true },
+                            modifier = Modifier.testTag("save_preset_button")
+                        ) {
+                            Text("Save current")
+                        }
+                    }
+                    Text(
+                        text = if (presets.isEmpty()) {
+                            "Save the settings below as a preset and apply them to any app with one tap " +
+                                "(name pattern {app} and {n} are filled in automatically)."
+                        } else {
+                            "Applied preset: " + (activePreset ?: "none") +
+                                ". Clones made with a preset keep its name pattern and mods."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (presets.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            for (preset in presets) {
+                                InputChip(
+                                    selected = preset.name == activePreset,
+                                    onClick = { viewModel.applyPreset(preset) },
+                                    label = { Text(preset.name, fontSize = 12.sp) },
+                                    trailingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.Delete,
+                                            contentDescription = "Delete ${preset.name}",
+                                            modifier = Modifier
+                                                .size(16.dp)
+                                                .clickable { viewModel.deletePreset(preset.id) }
+                                        )
+                                    }
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = presets.firstOrNull { it.name == activePreset }?.summary()
+                                ?: presets.first().summary(),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            if (showSavePresetDialog) {
+                var presetName by remember { mutableStateOf("") }
+                AlertDialog(
+                    onDismissRequest = { showSavePresetDialog = false },
+                    title = { Text("Save preset") },
+                    text = {
+                        Column {
+                            Text(
+                                text = "The current name, icon styling and clone mods are saved and can be " +
+                                    "applied to other apps later.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = presetName,
+                                onValueChange = { presetName = it },
+                                label = { Text("Preset name") },
+                                singleLine = true,
+                                modifier = Modifier.testTag("preset_name_field")
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                viewModel.saveCurrentSettingsAsPreset(presetName)
+                                showSavePresetDialog = false
+                            },
+                            modifier = Modifier.testTag("preset_save_confirm")
+                        ) {
+                            Text("Save")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showSavePresetDialog = false }) { Text("Cancel") }
+                    }
+                )
             }
 
             // ------------------------------------------------ Clone mods (manifest level features)

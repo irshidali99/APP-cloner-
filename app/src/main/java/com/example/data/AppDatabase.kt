@@ -4,11 +4,13 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import com.example.model.ClonePreset
 import com.example.model.CloneRecord
 
-@Database(entities = [CloneRecord::class], version = 4, exportSchema = false)
+@Database(entities = [CloneRecord::class, ClonePreset::class], version = 5, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun cloneRecordDao(): CloneRecordDao
+    abstract fun clonePresetDao(): ClonePresetDao
 
     companion object {
         @Volatile

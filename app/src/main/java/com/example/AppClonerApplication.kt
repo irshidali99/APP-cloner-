@@ -18,7 +18,7 @@ class AppClonerApplication : Application() {
     val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     val database by lazy { AppDatabase.getInstance(this) }
-    val cloneRepository by lazy { CloneRepository(this, database.cloneRecordDao()) }
+    val cloneRepository by lazy { CloneRepository(this, database.cloneRecordDao(), database.clonePresetDao()) }
     val preferencesRepository by lazy { PreferencesRepository(this) }
     val packageInspector by lazy { PackageInspector(this) }
     val cloneKeystore by lazy { CloneKeystore(this) }

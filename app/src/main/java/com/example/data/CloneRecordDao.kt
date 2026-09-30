@@ -6,8 +6,24 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
+import com.example.model.ClonePreset
 import com.example.model.CloneRecord
 import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface ClonePresetDao {
+    @Query("SELECT * FROM clone_presets ORDER BY createdAt DESC")
+    fun getAllPresets(): Flow<List<ClonePreset>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPreset(preset: ClonePreset): Long
+
+    @Query("DELETE FROM clone_presets WHERE id = :id")
+    suspend fun deletePreset(id: Long)
+
+    @Query("SELECT * FROM clone_presets WHERE id = :id LIMIT 1")
+    suspend fun getPreset(id: Long): ClonePreset?
+}
 
 @Dao
 interface CloneRecordDao {

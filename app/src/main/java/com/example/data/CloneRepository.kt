@@ -2,6 +2,7 @@ package com.example.data
 
 import android.content.Context
 import android.content.pm.PackageManager
+import com.example.model.ClonePreset
 import com.example.model.CloneRecord
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -11,9 +12,20 @@ import java.io.File
 
 class CloneRepository(
     private val context: Context,
-    private val cloneRecordDao: CloneRecordDao
+    private val cloneRecordDao: CloneRecordDao,
+    private val clonePresetDao: ClonePresetDao
 ) {
     val allClones: Flow<List<CloneRecord>> = cloneRecordDao.getAllClones()
+
+    val allPresets: Flow<List<ClonePreset>> = clonePresetDao.getAllPresets()
+
+    suspend fun savePreset(preset: ClonePreset): Long = withContext(Dispatchers.IO) {
+        clonePresetDao.insertPreset(preset)
+    }
+
+    suspend fun deletePreset(id: Long) = withContext(Dispatchers.IO) {
+        clonePresetDao.deletePreset(id)
+    }
     val cloneCount: Flow<Int> = cloneRecordDao.getCloneCount()
 
     fun getCloneById(id: Long): Flow<CloneRecord?> = cloneRecordDao.getCloneById(id)

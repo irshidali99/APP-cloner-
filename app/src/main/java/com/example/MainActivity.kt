@@ -42,6 +42,7 @@ import com.example.model.CloneRecord
 import com.example.model.InstalledApp
 import com.example.model.ThemeMode
 import com.example.ui.MainViewModel
+import com.example.ui.screens.BatchCloneScreen
 import com.example.ui.screens.CloneDetailsScreen
 import com.example.ui.screens.CloneReadySuccessScreen
 import com.example.ui.screens.CloneSetupScreen
@@ -58,7 +59,8 @@ enum class MainDestination(val title: String) {
     CLONE_SETUP("Setup"),
     CLONING_PROGRESS("Progress"),
     CLONE_READY("Success"),
-    CLONE_DETAILS("Details")
+    CLONE_DETAILS("Details"),
+    BATCH_CLONE("Batch")
 }
 
 class MainActivity : ComponentActivity() {
@@ -100,6 +102,7 @@ fun AppClonerApp(viewModel: MainViewModel) {
     BackHandler(enabled = currentDestination != MainDestination.INSTALLED_APPS) {
         when (currentDestination) {
             MainDestination.CLONE_SETUP -> currentDestination = MainDestination.INSTALLED_APPS
+            MainDestination.BATCH_CLONE -> currentDestination = MainDestination.INSTALLED_APPS
             MainDestination.CLONING_PROGRESS -> {
                 viewModel.cancelCloning()
                 currentDestination = MainDestination.INSTALLED_APPS
@@ -235,6 +238,7 @@ fun AppClonerApp(viewModel: MainViewModel) {
                                 selectedApp = app
                                 currentDestination = MainDestination.CLONE_SETUP
                             },
+                            onNavigateToBatch = { currentDestination = MainDestination.BATCH_CLONE },
                             modifier = Modifier.fillMaxSize()
                         )
                     }
@@ -300,6 +304,14 @@ fun AppClonerApp(viewModel: MainViewModel) {
                         } else {
                             currentDestination = MainDestination.MY_CLONES
                         }
+                    }
+
+                    MainDestination.BATCH_CLONE -> {
+                        BatchCloneScreen(
+                            viewModel = viewModel,
+                            onBackClick = { currentDestination = MainDestination.INSTALLED_APPS },
+                            modifier = Modifier.fillMaxSize()
+                        )
                     }
 
                     MainDestination.SETTINGS -> {

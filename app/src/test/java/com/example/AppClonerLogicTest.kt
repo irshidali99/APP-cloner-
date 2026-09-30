@@ -1,6 +1,11 @@
 package com.example
 
+import com.example.model.BatchItem
+import com.example.model.BatchProgress
+import com.example.model.BatchState
 import com.example.model.CloneConfig
+import com.example.model.CloneMods
+import com.example.model.ClonePreset
 import com.example.model.CloneRecord
 import com.example.model.CompatibilityReport
 import com.example.model.InstalledApp
@@ -234,5 +239,84 @@ class AppClonerLogicTest {
             sourcePackage = "com.app.demo"
         )
         assertEquals(1, index)
+    }
+
+    // ------------------------------------------------------------------ presets
+
+    @Test
+    fun testPresetFillsTheNamePattern() {
+        val preset = ClonePreset(name = "Stealth", namePattern = "{app} (Clone {n})", hideLauncherIcon = true)
+        assertEquals("WhatsApp (Clone 2)", preset.cloneName("WhatsApp", 2))
+        assertEquals("no icon", preset.summary())
+    }
+
+    @Test
+    fun testPresetPatternWithoutPlaceholdersStaysAsItIs() {
+        val preset = ClonePreset(name = "Plain", namePattern = "Work copy")
+        assertEquals("Work copy", preset.cloneName("Telegram", 5))
+    }
+
+    @Test
+    fun testPresetDerivesAPatternFromAConcreteName() {
+        val pattern = ClonePreset.derivePattern("Telegram (Clone 3)", "Telegram", 3)
+        assertEquals("{app} (Clone {n})", pattern)
+        // A number that is part of the app name must not become the clone index.
+        val other = ClonePreset.derivePattern("WhatsApp 2 Business", "WhatsApp 2 Business", 1)
+        assertEquals("{app}", other)
+    }
+
+    @Test
+    fun testPresetRoundTripsTheCloneMods() {
+        val mods = CloneMods(
+            hideLauncherIcon = true,
+            excludeFromRecents = true,
+            lockRotation = true,
+            removePermissionGroups = setOf("camera", "location")
+        )
+        val preset = ClonePreset(name = "Privacy").withSettings(
+            namePattern = "{app} {n}",
+            badgeColor = 0xFF112233L,
+            rotateIcon = false,
+            invertColors = true,
+            mods = mods,
+            versionNameSuffix = "-clone"
+        )
+        val restored = preset.toMods(versionName = "1.0-clone")
+        assertEquals(mods.hideLauncherIcon, restored.hideLauncherIcon)
+        assertEquals(mods.excludeFromRecents, restored.excludeFromRecents)
+        assertEquals(mods.lockRotation, restored.lockRotation)
+        assertEquals(setOf("camera", "location"), restored.removePermissionGroups)
+        assertEquals("1.0-clone", restored.versionName)
+    }
+
+    // ------------------------------------------------------------------ batch cloning
+
+    @Test
+    fun testBatchProgressCountsReadyAndFailedItems() {
+        val progress = BatchProgress(
+            items = listOf(
+                BatchItem("com.a", "A", state = BatchState.READY, apkPath = "/tmp/a.apk"),
+                BatchItem("com.b", "B", state = BatchState.FAILED, message = "system app"),
+                BatchItem("com.c", "C", state = BatchState.SKIPPED)
+            )
+        )
+        assertEquals(3, progress.total)
+        assertEquals(1, progress.done)
+        assertEquals(1, progress.failed)
+        assertTrue(progress.finished)
+        assertEquals(listOf("com.a"), progress.installable.map { it.packageName })
+    }
+
+    @Test
+    fun testBatchProgressIsNotFinishedWhileAnItemIsQueued() {
+        val progress = BatchProgress(
+            items = listOf(
+                BatchItem("com.a", "A", state = BatchState.READY),
+                BatchItem("com.b", "B", state = BatchState.PENDING)
+            ),
+            isRunning = true
+        )
+        assertFalse(progress.finished)
+        assertTrue(progress.items.last().state == BatchState.PENDING)
     }
 }
