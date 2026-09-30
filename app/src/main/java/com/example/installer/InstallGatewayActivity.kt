@@ -52,6 +52,8 @@ class InstallGatewayActivity : Activity() {
         // user only has to confirm each system dialog.
         pendingNames = intent.getStringArrayListExtra(EXTRA_QUEUE_NAMES) ?: ArrayList()
         pendingPaths = intent.getStringArrayListExtra(EXTRA_QUEUE_PATHS) ?: ArrayList()
+        pendingSources = intent.getStringArrayListExtra(EXTRA_QUEUE_SOURCES) ?: ArrayList()
+        sourcePackage = intent.getStringExtra(EXTRA_SOURCE_PACKAGE).orEmpty()
         val baseApk = apkPath?.let { File(it) }
 
         if (baseApk == null || !baseApk.isFile) {
@@ -153,6 +155,8 @@ class InstallGatewayActivity : Activity() {
 
     private var expectedSplitNames: List<String> = emptyList()
     private var queueTotal: Int = 0
+    private var sourcePackage: String = ""
+    private var pendingSources: ArrayList<String> = ArrayList()
     private var pendingNames: ArrayList<String> = ArrayList()
     private var pendingPaths: ArrayList<String> = ArrayList()
 
@@ -282,12 +286,11 @@ class InstallGatewayActivity : Activity() {
                     val installedPackage = packageName ?: targetPackageName
                     if (installedPackage.isNotEmpty()) {
                         val hasObb = com.example.engine.ObbSupport.hasObb(installedPackage)
-                        if (!hasObb) {
-                            val sourcePackage = ApkTransformer.readPackageIdentity(baseApk).first
-                            val sourceObb = sourcePackage?.let { com.example.engine.ObbSupport.hasObb(it) } == true
+                        if (!hasObb && sourcePackage.isNotEmpty()) {
+                            val sourceObb = com.example.engine.ObbSupport.hasObb(sourcePackage)
                             if (sourceObb) {
                                 val copied = com.example.engine.ObbSupport.copyObbToClone(
-                                    sourcePackage!!, installedPackage
+                                    sourcePackage, installedPackage
                                 )
                                 obbNote = when {
                                     copied > 0 -> "\n\nExpansion files copied: $copied"
@@ -309,9 +312,10 @@ class InstallGatewayActivity : Activity() {
                         val next = Intent(this, InstallGatewayActivity::class.java).apply {
                             putExtra(EXTRA_APK_PATH, nextPath)
                             putExtra(EXTRA_CLONE_NAME, nextName)
-                            putExtra(EXTRA_CLONE_NAME, nextName)
+                            putExtra(EXTRA_SOURCE_PACKAGE, nextSource)
                             putStringArrayListExtra(EXTRA_QUEUE_NAMES, pendingNames)
                             putStringArrayListExtra(EXTRA_QUEUE_PATHS, pendingPaths)
+                            putStringArrayListExtra(EXTRA_QUEUE_SOURCES, pendingSources)
                             putExtra(EXTRA_QUEUE_TOTAL, queueTotal)
                         }
                         startActivity(next)
@@ -406,12 +410,20 @@ class InstallGatewayActivity : Activity() {
         const val EXTRA_QUEUE_NAMES = "queue_names"
         const val EXTRA_QUEUE_PATHS = "queue_paths"
         const val EXTRA_QUEUE_TOTAL = "queue_total"
+        const val EXTRA_SOURCE_PACKAGE = "source_package"
+        const val EXTRA_QUEUE_SOURCES = "queue_sources"
 
         /** Intent that runs the whole install flow in this activity. */
-        fun intent(context: Context, apkFile: File, cloneName: String): Intent =
+        fun intent(
+            context: Context,
+            apkFile: File,
+            cloneName: String,
+            sourcePackage: String = ""
+        ): Intent =
             Intent(context, InstallGatewayActivity::class.java).apply {
                 putExtra(EXTRA_APK_PATH, apkFile.absolutePath)
                 putExtra(EXTRA_CLONE_NAME, cloneName)
+                putExtra(EXTRA_SOURCE_PACKAGE, sourcePackage)
             }
 
         /**
@@ -420,16 +432,19 @@ class InstallGatewayActivity : Activity() {
          */
         fun intentForQueue(
             context: Context,
-            first: Pair<String, String>,
-            queue: List<Pair<String, String>>
+            first: InstallQueueEntry,
+            queue: List<InstallQueueEntry>
         ): Intent {
-            val names = ArrayList(queue.map { it.first })
-            val paths = ArrayList(queue.map { it.second })
+            val names = ArrayList(queue.map { it.cloneName })
+            val paths = ArrayList(queue.map { it.apkPath })
+            val sources = ArrayList(queue.map { it.sourcePackage })
             return Intent(context, InstallGatewayActivity::class.java).apply {
-                putExtra(EXTRA_APK_PATH, first.second)
-                putExtra(EXTRA_CLONE_NAME, first.first)
+                putExtra(EXTRA_APK_PATH, first.apkPath)
+                putExtra(EXTRA_CLONE_NAME, first.cloneName)
+                putExtra(EXTRA_SOURCE_PACKAGE, first.sourcePackage)
                 putStringArrayListExtra(EXTRA_QUEUE_NAMES, names)
                 putStringArrayListExtra(EXTRA_QUEUE_PATHS, paths)
+                putStringArrayListExtra(EXTRA_QUEUE_SOURCES, sources)
                 putExtra(EXTRA_QUEUE_TOTAL, queue.size + 1)
             }
         }

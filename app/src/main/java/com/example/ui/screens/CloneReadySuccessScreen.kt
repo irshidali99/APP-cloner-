@@ -326,7 +326,8 @@ fun CloneReadySuccessScreen(
             apkFile = apkFile,
             cloneName = cloneName,
             packageInstallerManager = viewModel.installerManager,
-            onDismiss = { showHandoffDialog = false }
+            onDismiss = { showHandoffDialog = false },
+            sourcePackage = lastClone?.sourcePackage.orEmpty()
         )
     }
 }

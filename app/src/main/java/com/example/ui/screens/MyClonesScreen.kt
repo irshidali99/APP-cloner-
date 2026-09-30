@@ -245,7 +245,8 @@ fun MyClonesScreen(
             apkFile = File(record.apkFilePath),
             cloneName = record.cloneName,
             packageInstallerManager = viewModel.installerManager,
-            onDismiss = { cloneToInstall = null }
+            onDismiss = { cloneToInstall = null },
+            sourcePackage = record.sourcePackage
         )
     }
 

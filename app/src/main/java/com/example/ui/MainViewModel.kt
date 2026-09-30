@@ -466,9 +466,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _batchProgress.value = _batchProgress.value.copy(items = items)
     }
 
-    /** Queue of clones to install one after another, `name` to `apk path`. */
-    fun installQueueOfReadyClones(): List<Pair<String, String>> =
-        _batchProgress.value.installable.map { it.cloneName to it.apkPath }
+    /** Queue of clones to install one after another. */
+    fun installQueueOfReadyClones(): List<com.example.installer.InstallQueueEntry> =
+        _batchProgress.value.installable.map { item ->
+            com.example.installer.InstallQueueEntry(
+                cloneName = item.cloneName,
+                apkPath = item.apkPath,
+                sourcePackage = item.packageName
+            )
+        }
 
     fun startCloning(onStarted: () -> Unit) {
         val app = selectedAppForSetup.value ?: return

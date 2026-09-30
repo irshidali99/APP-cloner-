@@ -40,7 +40,9 @@ fun InstallHandoffDialog(
     apkFile: File,
     cloneName: String,
     packageInstallerManager: PackageInstallerManager,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    /** Package of the original app, used to find its expansion files for the clone. */
+    sourcePackage: String = ""
 ) {
     var hasPermission by remember {
         mutableStateOf(packageInstallerManager.canRequestPackageInstalls())
@@ -128,7 +130,7 @@ fun InstallHandoffDialog(
                         // Android 10+, which is why the install appeared to vanish.
                         runCatching {
                             context.startActivity(
-                                InstallGatewayActivity.intent(context, apkFile, cloneName)
+                                InstallGatewayActivity.intent(context, apkFile, cloneName, sourcePackage)
                             )
                         }.onFailure { error ->
                             installError = error.message ?: error::class.java.simpleName

@@ -603,7 +603,8 @@ fun CloneDetailsScreen(
             apkFile = file,
             cloneName = record.cloneName,
             packageInstallerManager = viewModel.installerManager,
-            onDismiss = { showInstallDialog = false }
+            onDismiss = { showInstallDialog = false },
+            sourcePackage = record.sourcePackage
         )
     }
 
