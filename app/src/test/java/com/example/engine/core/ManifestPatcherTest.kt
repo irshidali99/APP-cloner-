@@ -136,9 +136,49 @@ class ManifestPatcherTest {
     fun hidingTheLauncherIconRemovesTheLauncherIntentFilter() {
         val editor = patchWith(CloneMods(hideLauncherIcon = true))
         val filters = editor.startElements().filter { editor.elementName(it) == "intent-filter" }
-        assertTrue("launcher filter was not removed: ${filters.size} left", filters.isEmpty())
+        // Only the launcher entry has to go: the widget receiver keeps its own intent filter.
+        val launcherFilters = filters.filter { filter -> isLauncherFilter(editor, filter) }
+        assertTrue("launcher filter was not removed: ${launcherFilters.size} left", launcherFilters.isEmpty())
+        assertTrue("the widget filter was removed as well", filters.isNotEmpty())
         // The activity itself stays, only its launcher entry is gone.
         assertNotNull("the activity disappeared", element(editor, "activity"))
+    }
+
+    /** Same rule the engine uses: a filter that declares MAIN plus the LAUNCHER category. */
+    private fun isLauncherFilter(editor: AxmlEditor, filter: AxmlNode.StartElement): Boolean =
+        actionsOf(editor, filter).let { values ->
+            values.contains("android.intent.action.MAIN") &&
+                values.contains("android.intent.category.LAUNCHER")
+        }
+
+    /** Collects the `android:name` of every `action` / `category` below [element]. */
+    private fun actionsOf(editor: AxmlEditor, element: AxmlNode.StartElement): List<String> = buildList {
+        val nodes = editor.nodes
+        val start = nodes.indexOf(element)
+        if (start < 0) return@buildList
+        var depth = 0
+        var index = start
+        while (index < nodes.size) {
+            when (val node = nodes[index]) {
+                is AxmlNode.StartElement -> {
+                    depth++
+                    if (node !== element) {
+                        val name = editor.elementName(node)
+                        if (name == "action" || name == "category") {
+                            editor.findAttribute(node, ManifestRules.ANDROID_NAMESPACE, "name")
+                                ?.let { editor.string(it.rawValue) }
+                                ?.let { add(it) }
+                        }
+                    }
+                }
+                is AxmlNode.EndElement -> {
+                    depth--
+                    if (depth == 0) return@buildList
+                }
+                else -> Unit
+            }
+            index++
+        }
     }
 
     @Test
