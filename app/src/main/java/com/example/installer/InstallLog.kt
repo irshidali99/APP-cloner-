@@ -92,7 +92,7 @@ object InstallLog {
         entry.packageName,
         entry.success.toString(),
         entry.status.toString(),
-        entry.message.replace(FIELD_SEPARATOR, ' ').replace('\n', ' '),
+        entry.message.replace(FIELD_SEPARATOR, " ").replace('\n', ' '),
         entry.expectedSplits.joinToString(LIST_SEPARATOR),
         entry.installedSplits.joinToString(LIST_SEPARATOR),
         entry.timestamp.toString()

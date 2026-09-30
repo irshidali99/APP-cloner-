@@ -90,6 +90,11 @@ fun CloneDetailsScreen(
     val dateString = remember(record.createdAt) {
         SimpleDateFormat("MMMM d, yyyy 'at' h:mm a", Locale.US).format(Date(record.createdAt))
     }
+    // What the Android installer answered for the last attempt. Declared here so both the header and the
+    // action section (diagnostics copy) can use it.
+    val lastAttempt = remember(record.id, record.installStatus) {
+        InstallLog.read(context, record.clonePackageId)
+    }
 
     Scaffold(
         topBar = {
@@ -237,9 +242,6 @@ fun CloneDetailsScreen(
 
                         // What the Android installer answered last time. Without this the reason for a
                         // refused installation only exists in a dialog that cannot be copied.
-                        val lastAttempt = remember(record.id, record.installStatus) {
-                            InstallLog.read(context, record.clonePackageId)
-                        }
                         if (lastAttempt != null) {
                             Spacer(modifier = Modifier.height(10.dp))
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
