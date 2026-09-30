@@ -278,7 +278,7 @@ class InstallGatewayActivity : Activity() {
                         pendingNames.removeAt(0)
                         pendingPaths.removeAt(0)
                         Toast.makeText(this, "Installed $cloneName, next: $nextName", Toast.LENGTH_SHORT).show()
-                        val next = intent(this, InstallGatewayActivity::class.java).apply {
+                        val next = Intent(this, InstallGatewayActivity::class.java).apply {
                             putExtra(EXTRA_APK_PATH, nextPath)
                             putExtra(EXTRA_CLONE_NAME, nextName)
                             putStringArrayListExtra(EXTRA_QUEUE_NAMES, pendingNames)
