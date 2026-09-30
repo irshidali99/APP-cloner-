@@ -129,6 +129,13 @@ object TestFixtures {
         addNode(endElement("uses-permission"))
         addNode(
             startElement(
+                "uses-permission",
+                listOf(attribute(ANDROID_NAMESPACE, "name", TYPE_STRING, index(DANGEROUS_PERMISSION), strings))
+            )
+        )
+        addNode(endElement("uses-permission"))
+        addNode(
+            startElement(
                 "application",
                 listOf(
                     attribute(ANDROID_NAMESPACE, "label", TYPE_STRING, index(ORIGINAL_LABEL)),
