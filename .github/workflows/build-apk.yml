@@ -50,7 +50,6 @@ jobs:
 
       - name: Run engine unit tests
         id: tests
-        continue-on-error: true
         run: |
           ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee test.log
           exit ${PIPESTATUS[0]}

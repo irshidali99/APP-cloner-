@@ -48,8 +48,8 @@ data class CompatibilityReport(
                 "check fails and the app closes itself right after its first screen. Apps that only look " +
                 "at their own package name work fine as clones; apps that check their signature do not.\n\n" +
                 "What does work instead:\n" +
-                "1. Built-in multi account: in $appLabel open Settings, tap your name, choose \"Add \" + " +
-                "\"account\" (two accounts in one official app, needs a second phone number).\n" +
+                "1. Built-in multi account: in $appLabel open Settings, tap your name and choose the " +
+                "\"Add account\" option (two accounts in one official app, needs a second phone number).\n" +
                 "2. Your phone's own Dual Apps / Dual Messenger / Parallel Apps / Secure Folder: it keeps " +
                 "the app signed by its developer, so it runs normally.\n" +
                 "3. WhatsApp Business can be installed next to the normal app with its own number.\n\n" +
