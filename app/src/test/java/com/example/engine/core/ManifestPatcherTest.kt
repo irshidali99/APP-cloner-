@@ -224,7 +224,12 @@ class ManifestPatcherTest {
         // Round trip: the platform has to be able to parse what the engine writes.
         val reparsed = AxmlEditor.parse(editor.toByteArray())
 
-        val provider = reparsed.startElements().firstOrNull { reparsed.elementName(it) == "provider" }
+        // The fixture has a provider of its own, so the injected one is picked by its class name.
+        val provider = reparsed.startElements().firstOrNull { element ->
+            reparsed.elementName(element) == "provider" &&
+                reparsed.findAttribute(element, ManifestRules.ANDROID_NAMESPACE, "name")
+                    ?.let { reparsed.string(it.rawValue) } == RuntimeRegistration.PROVIDER_CLASS
+        }
         assertNotNull("the bootstrap provider was not added: ${dump(reparsed)}", provider)
         assertEquals(
             RuntimeRegistration.PROVIDER_CLASS,
@@ -242,7 +247,11 @@ class ManifestPatcherTest {
             reparsed.findAttribute(provider, ManifestRules.ANDROID_NAMESPACE, "exported")?.valueData
         )
 
-        val metaData = reparsed.startElements().firstOrNull { reparsed.elementName(it) == "meta-data" }
+        val metaData = reparsed.startElements().firstOrNull { element ->
+            reparsed.elementName(element) == "meta-data" &&
+                reparsed.findAttribute(element, ManifestRules.ANDROID_NAMESPACE, "name")
+                    ?.let { reparsed.string(it.rawValue) } == RuntimeRegistration.CONFIG_META
+        }
         assertNotNull("the configuration meta-data was not added: ${dump(reparsed)}", metaData)
         assertEquals(
             RuntimeRegistration.CONFIG_META,
