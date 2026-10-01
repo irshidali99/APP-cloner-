@@ -16,6 +16,7 @@ import com.example.model.CloneRecord
 import com.example.model.CompatibilityReport
 import com.example.model.InstalledApp
 import com.example.model.PipelineProgress
+import com.example.model.LockMode
 import com.example.model.RuntimeOptions
 import com.example.model.PipelineStage
 import com.example.model.SettingsData
@@ -168,9 +169,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _runtimeOptions = MutableStateFlow(RuntimeOptions())
     val runtimeOptions: StateFlow<RuntimeOptions> = _runtimeOptions.asStateFlow()
 
-    /** Passcode field problem of the setup screen, `null` when the input is usable. */
-    private val _runtimePasscodeError = MutableStateFlow<String?>(null)
-    val runtimePasscodeError: StateFlow<String?> = _runtimePasscodeError.asStateFlow()
+    /** Problem with the lock input of the setup screen (short passcode, mismatched fields, ...). */
+    private val _runtimeLockError = MutableStateFlow<String?>(null)
+    val runtimeLockError: StateFlow<String?> = _runtimeLockError.asStateFlow()
 
     /** True when this build actually carries the runtime patch dex. */
     val runtimeAvailable: Boolean by lazy {
@@ -181,6 +182,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _runtimeOptions.value = transform(_runtimeOptions.value)
     }
 
+    /** Switches between no lock, passcode, pattern and the calculator disguise. */
+    fun setRuntimeLockMode(mode: LockMode) {
+        _runtimeLockError.value = null
+        _runtimeOptions.value = _runtimeOptions.value.copy(lockMode = mode)
+    }
+
     /**
      * Stores the passcode as a SHA-256 hash. The raw passcode stays on the screen and is never saved: the
      * clone can only be unlocked by typing it again.
@@ -189,20 +196,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val value = passcode.trim()
         when {
             value.isEmpty() -> {
-                _runtimePasscodeError.value = null
+                _runtimeLockError.value = null
                 _runtimeOptions.value = _runtimeOptions.value.copy(passcodeHash = "")
             }
             value.length < RuntimeOptions.MIN_PASSCODE_LENGTH -> {
-                _runtimePasscodeError.value =
+                _runtimeLockError.value =
                     "The passcode needs at least ${RuntimeOptions.MIN_PASSCODE_LENGTH} characters."
                 _runtimeOptions.value = _runtimeOptions.value.copy(passcodeHash = "")
             }
             value != confirmation.trim() -> {
-                _runtimePasscodeError.value = "The two passcodes do not match."
+                _runtimeLockError.value = "The two passcodes do not match."
                 _runtimeOptions.value = _runtimeOptions.value.copy(passcodeHash = "")
             }
             else -> {
-                _runtimePasscodeError.value = null
+                _runtimeLockError.value = null
                 _runtimeOptions.value = _runtimeOptions.value.copy(
                     passcodeHash = RuntimeOptions.hash(value)
                 )
@@ -210,10 +217,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Clears the passcode fields when a new app is set up. */
+    /** Stores the drawn pattern (dot order) as a hash. */
+    fun setRuntimePattern(dots: List<Int>) {
+        when {
+            dots.isEmpty() -> {
+                _runtimeLockError.value = null
+                _runtimeOptions.value = _runtimeOptions.value.copy(patternHash = "")
+            }
+            dots.size < RuntimeOptions.MIN_PATTERN_DOTS -> {
+                _runtimeLockError.value =
+                    "A pattern needs at least ${RuntimeOptions.MIN_PATTERN_DOTS} dots."
+                _runtimeOptions.value = _runtimeOptions.value.copy(patternHash = "")
+            }
+            else -> {
+                _runtimeLockError.value = null
+                _runtimeOptions.value = _runtimeOptions.value.copy(
+                    patternHash = RuntimeOptions.hashPattern(dots)
+                )
+            }
+        }
+    }
+
+    /** Clears the lock fields when a new app is set up. */
     fun resetRuntimeOptions() {
         _runtimeOptions.value = RuntimeOptions()
-        _runtimePasscodeError.value = null
+        _runtimeLockError.value = null
     }
 
     /** Saved clone setups (presets). */
@@ -576,7 +604,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             runtime = _runtimeOptions.value
         )
 
-        val passcodeError = _runtimePasscodeError.value
+        val passcodeError = _runtimeLockError.value
         if (passcodeError != null) {
             _cloningProgress.value = PipelineProgress(
                 stage = PipelineStage.FAILED,

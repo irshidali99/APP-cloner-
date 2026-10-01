@@ -8,9 +8,9 @@ import com.example.model.RuntimeOptions
  * The clone gets two extra components:
  *
  *  - `com.appcloner.runtime.PatchProvider`, a `ContentProvider` **without** an intent filter. Android
- *    creates every provider of an app before its first activity and before the app's own
- *    `Application.onCreate`, so this is the earliest hook a patch can use without touching the app's
- *    classes. Its meta-data carries the configuration (passcode hash, feature flags).
+ *    creates every provider of an app before its first activity, service or receiver, so this is the
+ *    earliest hook a patch can use without touching the app's own classes (`Application.onCreate` has
+ *    already run at that point). Its meta-data carries the configuration (passcode hash, feature flags).
  *  - `com.appcloner.runtime.LockActivity`, the passcode screen, which is opened over the app when a lock
  *    is configured.
  *

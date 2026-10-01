@@ -1,9 +1,9 @@
 /*
  * Bootstrap of the runtime patch.
  *
- * Android creates every ContentProvider of an app before any of its activities and before the app's own
- * Application.onCreate, so this provider is the earliest code the clone can run without touching the
- * app's own classes. It reads its configuration from its own meta-data and hands it to AppClonerPatch.
+ * Android creates every ContentProvider of an app before any of its activities, services or receivers, so
+ * this provider is the earliest hook a patch can use without touching the app's own classes (by then
+ * Application.onCreate has already run, which is fine: the lock only has to be up before a screen shows). It reads its configuration from its own meta-data and hands it to AppClonerPatch.
  */
 package com.appcloner.runtime;
 

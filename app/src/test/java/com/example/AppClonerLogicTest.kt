@@ -11,6 +11,7 @@ import com.example.model.CloneRecord
 import com.example.model.CompatibilityReport
 import com.example.model.InstalledApp
 import com.example.model.KnownIssues
+import com.example.model.LockMode
 import com.example.model.PipelineProgress
 import com.example.model.PipelineStage
 import org.junit.Assert.assertEquals
@@ -333,28 +334,76 @@ class AppClonerLogicTest {
             "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
             RuntimeOptions.hash("1234")
         )
-        val options = RuntimeOptions(passcodeHash = RuntimeOptions.hash("my pass"))
+        val options = RuntimeOptions(
+            lockMode = LockMode.PASSCODE,
+            passcodeHash = RuntimeOptions.hash("my pass")
+        )
         assertTrue(options.lockEnabled)
         assertTrue(options.matches("my pass"))
         assertFalse(options.matches("my pass "))
-        assertFalse(RuntimeOptions().lockEnabled)
+        // A hash without a lock mode is not a lock, and neither is a lock without a hash.
+        assertFalse(RuntimeOptions(passcodeHash = RuntimeOptions.hash("1234")).lockEnabled)
+        assertFalse(RuntimeOptions(lockMode = LockMode.PASSCODE).lockEnabled)
+    }
+
+    @Test
+    fun testRuntimePatternIsHashedInDrawingOrder() {
+        val pattern = listOf(0, 1, 4, 7)
+        val options = RuntimeOptions(
+            lockMode = LockMode.PATTERN,
+            patternHash = RuntimeOptions.hashPattern(pattern)
+        )
+        assertTrue(options.lockEnabled)
+        assertTrue(options.matchesPattern("0,1,4,7"))
+        // The same dots in a different order are a different pattern.
+        assertFalse(options.matchesPattern("7,4,1,0"))
+        assertFalse(options.matches("0,1,4,7"))
+        assertEquals(RuntimeOptions.hash("0,1,4,7"), RuntimeOptions.hashPattern(pattern))
     }
 
     @Test
     fun testRuntimeConfigStringIsReadableByThePatch() {
         val options = RuntimeOptions(
+            lockMode = LockMode.PASSCODE,
             passcodeHash = RuntimeOptions.hash("1234"),
             blockScreenshots = true,
             incognitoWipe = false,
-            exitOnScreenOff = true
+            exitOnScreenOff = true,
+            forceDarkMode = true,
+            confirmExit = true,
+            shakeToExit = false,
+            floatingBackButton = true,
+            appLanguage = "ur"
         )
         assertEquals(
-            "lock=03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4;shots=1;wipe=0;screenoff=1",
+            "mode=passcode;lock=03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4" +
+                ";pattern=;shots=1;wipe=0;screenoff=1;dark=1;confirm=1;shake=0;fab=1;lang=ur",
             options.configString()
         )
         val empty = RuntimeOptions()
         assertTrue(empty.isEmpty)
-        assertEquals("lock=;shots=0;wipe=0;screenoff=0", empty.configString())
+        // The keys have to stay exactly like this: the injected patch parses them by name.
+        assertEquals(
+            "mode=none;lock=;pattern=;shots=0;wipe=0;screenoff=0;dark=0;confirm=0;shake=0;fab=0;lang=",
+            empty.configString()
+        )
+    }
+
+    @Test
+    fun testRuntimeLockModeKeysMatchThePatch() {
+        assertEquals("none", LockMode.NONE.key)
+        assertEquals("passcode", LockMode.PASSCODE.key)
+        assertEquals("pattern", LockMode.PATTERN.key)
+        assertEquals("calc", LockMode.CALCULATOR.key)
+        assertEquals(LockMode.CALCULATOR, LockMode.fromKey("calc"))
+        assertEquals(LockMode.NONE, LockMode.fromKey("something-else"))
+        // The calculator disguise is a passcode lock: it unlocks with the passcode hash.
+        val calculator = RuntimeOptions(
+            lockMode = LockMode.CALCULATOR,
+            passcodeHash = RuntimeOptions.hash("1234")
+        )
+        assertTrue(calculator.lockEnabled)
+        assertTrue(calculator.matches("1234"))
     }
 
     @Test
@@ -369,6 +418,7 @@ class AppClonerLogicTest {
     @Test
     fun testRuntimeSummaryListsEverySelectedFeature() {
         val options = RuntimeOptions(
+            lockMode = LockMode.PASSCODE,
             passcodeHash = RuntimeOptions.hash("1234"),
             blockScreenshots = true,
             incognitoWipe = true
@@ -376,6 +426,16 @@ class AppClonerLogicTest {
         assertEquals(
             "passcode lock, screenshots blocked, incognito (data wiped on exit)",
             options.summary()
+        )
+        assertEquals(
+            "pattern lock, forced dark mode, confirm exit, shake to exit",
+            RuntimeOptions(
+                lockMode = LockMode.PATTERN,
+                patternHash = RuntimeOptions.hashPattern(listOf(0, 1, 2, 5)),
+                forceDarkMode = true,
+                confirmExit = true,
+                shakeToExit = true
+            ).summary()
         )
         assertEquals("none", RuntimeOptions().summary())
     }

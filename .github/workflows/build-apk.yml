@@ -40,9 +40,18 @@ jobs:
       - name: Build the runtime patch dex
         id: runtime-dex
         run: |
-          bash scripts/build-runtime-dex.sh
+          set -o pipefail
+          bash scripts/build-runtime-dex.sh 2>&1 | tee runtime-dex.log
           ls -l app/src/main/assets/runtime/patch.dex
           echo "::notice title=Runtime patch::patch dex built ($(wc -c < app/src/main/assets/runtime/patch.dex) bytes)"
+
+      # javac/d8 messages are the only way to see what a hand written patch got wrong, so they are
+      # surfaced as an annotation instead of hiding in the log.
+      - name: Report runtime patch errors as annotations
+        if: failure() && steps.runtime-dex.outcome == 'failure'
+        run: |
+          echo "::error title=Runtime patch build failed::$(grep -E 'error:|cannot find symbol|symbol:|location:|FAILURE|Exception|warning:' runtime-dex.log | head -25 | tr '\n' '~')"
+          tail -50 runtime-dex.log
 
       - name: Build debug APK
         id: build

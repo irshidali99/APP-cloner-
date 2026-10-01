@@ -218,7 +218,11 @@ class ManifestPatcherTest {
 
     @Test
     fun runtimeRegistrationAddsTheBootstrapProviderAndTheLockScreen() {
-        val runtime = RuntimeOptions(passcodeHash = RuntimeOptions.hash("1234"), blockScreenshots = true)
+        val runtime = RuntimeOptions(
+            lockMode = com.example.model.LockMode.PASSCODE,
+            passcodeHash = RuntimeOptions.hash("1234"),
+            blockScreenshots = true
+        )
         val editor = AxmlEditor.parse(TestFixtures.manifestBytes())
         val applied = RuntimeRegistration.apply(editor, runtime, "com.example.clone.smoke")
         // Round trip: the platform has to be able to parse what the engine writes.

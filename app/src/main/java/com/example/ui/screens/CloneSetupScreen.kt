@@ -61,6 +61,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import com.example.model.LockMode
+import com.example.model.RuntimeOptions
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -339,10 +341,10 @@ fun CloneSetupScreen(
             // These options do not fit into a manifest attribute: App Cloner injects a small patch into the
             // clone (an extra dex file + a bootstrap provider) and configures it through the manifest.
             val runtime by viewModel.runtimeOptions.collectAsStateWithLifecycle()
-            val passcodeError by viewModel.runtimePasscodeError.collectAsStateWithLifecycle()
-            var lockWanted by remember { mutableStateOf(false) }
+            val lockError by viewModel.runtimeLockError.collectAsStateWithLifecycle()
             var passcode by remember { mutableStateOf("") }
             var passcodeConfirm by remember { mutableStateOf("") }
+            var patternDots by remember { mutableStateOf(listOf<Int>()) }
 
             Card(
                 shape = RoundedCornerShape(16.dp),
@@ -365,7 +367,7 @@ fun CloneSetupScreen(
                     )
                     Text(
                         text = "These options are written into the clone itself (not only its manifest). " +
-                            "The passcode is stored as a hash and cannot be read back.",
+                            "Secrets are stored as a hash and cannot be read back.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -378,22 +380,46 @@ fun CloneSetupScreen(
                         )
                     }
 
-                    ModSwitch(
-                        title = "Passcode lock",
-                        subtitle = "The clone asks for a passcode before it opens",
-                        checked = lockWanted
-                    ) { value ->
-                        lockWanted = value
-                        if (value) {
-                            viewModel.setRuntimePasscode(passcode, passcodeConfirm)
-                        } else {
-                            passcode = ""
-                            passcodeConfirm = ""
-                            viewModel.setRuntimePasscode("", "")
+                    // -------------------------------------------------- lock
+                    Text(
+                        text = "Lock",
+                        fontWeight = FontWeight.Medium,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        for (mode in LockMode.entries) {
+                            FilterChip(
+                                selected = runtime.lockMode == mode,
+                                onClick = {
+                                    viewModel.setRuntimeLockMode(mode)
+                                    if (mode != LockMode.PATTERN) patternDots = emptyList()
+                                    if (mode != LockMode.PASSCODE && mode != LockMode.CALCULATOR) {
+                                        passcode = ""
+                                        passcodeConfirm = ""
+                                        viewModel.setRuntimePasscode("", "")
+                                    }
+                                },
+                                label = { Text(mode.label, fontSize = 12.sp) },
+                                modifier = Modifier.testTag("runtime_lock_${mode.key}")
+                            )
                         }
                     }
 
-                    if (lockWanted) {
+                    if (runtime.lockMode == LockMode.CALCULATOR) {
+                        Text(
+                            text = "The clone opens as a calculator. Type the passcode and press \"=\" to " +
+                                "unlock; keep a finger on the display to enter the reset code.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    if (runtime.lockMode == LockMode.PASSCODE || runtime.lockMode == LockMode.CALCULATOR) {
                         OutlinedTextField(
                             value = passcode,
                             onValueChange = { value ->
@@ -420,22 +446,58 @@ fun CloneSetupScreen(
                                 .fillMaxWidth()
                                 .testTag("runtime_passcode_confirm_field")
                         )
-                        passcodeError?.let { message ->
-                            Text(
-                                text = message,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.testTag("runtime_passcode_error")
-                            )
-                        }
+                    }
+
+                    if (runtime.lockMode == LockMode.PATTERN) {
                         Text(
-                            text = "Keep the passcode safe. If it is forgotten, the reset code shown in the " +
+                            text = if (patternDots.isEmpty()) {
+                                "Tap the dots in the order of your pattern (at least " +
+                                    "${RuntimeOptions.MIN_PATTERN_DOTS} dots)."
+                            } else {
+                                "Pattern: " + patternDots.joinToString(" \u2192 ") { (it + 1).toString() }
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        PatternPad(
+                            dots = patternDots,
+                            onDot = { dot ->
+                                if (patternDots.size < 9) {
+                                    patternDots = patternDots + dot
+                                    viewModel.setRuntimePattern(patternDots)
+                                }
+                            }
+                        )
+                        TextButton(
+                            onClick = {
+                                patternDots = emptyList()
+                                viewModel.setRuntimePattern(emptyList())
+                            },
+                            modifier = Modifier.testTag("runtime_pattern_clear")
+                        ) {
+                            Text("Clear pattern")
+                        }
+                    }
+
+                    lockError?.let { message ->
+                        Text(
+                            text = message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.testTag("runtime_lock_error")
+                        )
+                    }
+
+                    if (runtime.lockEnabled) {
+                        Text(
+                            text = "Keep the secret safe. If it is forgotten, the reset code shown in the " +
                                 "clone's details unlocks the clone once.",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
 
+                    // -------------------------------------------------- the rest
                     ModSwitch(
                         title = "Block screenshots",
                         subtitle = "Screenshots, screen recording and the recents preview are blocked",
@@ -451,6 +513,49 @@ fun CloneSetupScreen(
                         subtitle = "The clone closes when the screen is turned off",
                         checked = runtime.exitOnScreenOff
                     ) { value -> viewModel.updateRuntime { it.copy(exitOnScreenOff = value) } }
+                    ModSwitch(
+                        title = "Forced dark mode",
+                        subtitle = "The clone always uses its dark theme (Android 12 or newer)",
+                        checked = runtime.forceDarkMode
+                    ) { value -> viewModel.updateRuntime { it.copy(forceDarkMode = value) } }
+                    ModSwitch(
+                        title = "Confirm exit",
+                        subtitle = "Leaving the clone asks for a second back press",
+                        checked = runtime.confirmExit
+                    ) { value -> viewModel.updateRuntime { it.copy(confirmExit = value) } }
+                    ModSwitch(
+                        title = "Shake to exit",
+                        subtitle = "Shaking the phone closes the clone",
+                        checked = runtime.shakeToExit
+                    ) { value -> viewModel.updateRuntime { it.copy(shakeToExit = value) } }
+                    ModSwitch(
+                        title = "Floating back button",
+                        subtitle = "A small back button is drawn over the clone",
+                        checked = runtime.floatingBackButton
+                    ) { value -> viewModel.updateRuntime { it.copy(floatingBackButton = value) } }
+
+                    Text(
+                        text = "Language of the clone (Android 13 or newer)",
+                        fontWeight = FontWeight.Medium,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        for (option in LANGUAGE_OPTIONS) {
+                            FilterChip(
+                                selected = runtime.appLanguage == option.second,
+                                onClick = { viewModel.updateRuntime { it.copy(appLanguage = option.second) } },
+                                label = { Text(option.first, fontSize = 12.sp) },
+                                modifier = Modifier.testTag(
+                                    "runtime_language_" + option.second.ifBlank { "system" }
+                                )
+                            )
+                        }
+                    }
                 }
             }
 
@@ -1012,6 +1117,61 @@ fun CloneSetupScreen(
 }
 
 /** One labelled switch of the clone mods card. */
+/** Languages offered for a clone (BCP-47 tags; Android 13+ applies them per app). */
+private val LANGUAGE_OPTIONS = listOf(
+    "System" to "",
+    "English" to "en",
+    "\u0627\u0631\u062f\u0648" to "ur",
+    "\u0939\u093f\u0928\u094d\u0926\u0940" to "hi",
+    "\u0627\u0644\u0639\u0631\u0628\u064a\u0629" to "ar",
+    "Espa\u00f1ol" to "es"
+)
+
+/** The 3x3 grid the pattern for a locked clone is tapped on. */
+@Composable
+private fun PatternPad(
+    dots: List<Int>,
+    onDot: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier.testTag("runtime_pattern_pad")) {
+        for (row in 0 until 3) {
+            Row(
+                modifier = Modifier.padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                for (column in 0 until 3) {
+                    val index = row * 3 + column
+                    val selected = dots.contains(index)
+                    Box(
+                        modifier = Modifier
+                            .size(52.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (selected) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant
+                                }
+                            )
+                            .clickable { onDot(index) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = (index + 1).toString(),
+                            color = if (selected) {
+                                MaterialTheme.colorScheme.onPrimary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun ModSwitch(
     title: String,

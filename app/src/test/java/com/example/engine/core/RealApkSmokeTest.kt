@@ -100,9 +100,12 @@ class RealApkSmokeTest {
         // Phase 3: build the runtime patch exactly like the app does (prebuilt dex + manifest components),
         // so CI verifies the injected dex and the registered provider on a real world APK.
         val runtimeOptions = com.example.model.RuntimeOptions(
+            lockMode = com.example.model.LockMode.PASSCODE,
             passcodeHash = com.example.model.RuntimeOptions.hash("1234"),
             blockScreenshots = true,
-            incognitoWipe = true
+            incognitoWipe = true,
+            confirmExit = true,
+            floatingBackButton = true
         )
         val runtimeDex = listOf(
             File("src/main/assets/runtime/patch.dex"),
