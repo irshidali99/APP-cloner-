@@ -1,0 +1,6 @@
+{
+  "name": "App Cloner",
+  "description": "Create separately installable APK clones of compatible user-selected Android apps with custom name, icon badge, and honest compatibility analysis.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

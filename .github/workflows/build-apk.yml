@@ -1,0 +1,311 @@
+name: Build debug APK
+
+on:
+  push:
+    branches:
+      - "arena/**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Check the test signing key
+        run: |
+          if [ -f ci/test-signing.jks ]; then
+            echo "using the committed test signing key (stable across builds)"
+          else
+            echo "::warning title=Test signing key missing::APKs will be signed with a random debug key and cannot be installed over each other"
+          fi
+
+      # Phase 3 runtime features are injected into a clone as an extra dex file. It is compiled here, from
+      # runtime-src/, with the exact Android API level the clones need - the phone never needs a compiler.
+      - name: Build the runtime patch dex
+        id: runtime-dex
+        run: |
+          set -o pipefail
+          bash scripts/build-runtime-dex.sh 2>&1 | tee runtime-dex.log
+          ls -l app/src/main/assets/runtime/patch.dex
+          echo "::notice title=Runtime patch::patch dex built ($(wc -c < app/src/main/assets/runtime/patch.dex) bytes)"
+
+      # javac/d8 messages are the only way to see what a hand written patch got wrong, so they are
+      # surfaced as an annotation instead of hiding in the log.
+      - name: Report runtime patch errors as annotations
+        if: failure() && steps.runtime-dex.outcome == 'failure'
+        run: |
+          echo "::error title=Runtime patch build failed::$(grep -E 'error:|cannot find symbol|symbol:|location:|FAILURE|Exception|warning:' runtime-dex.log | head -25 | tr '\n' '~')"
+          tail -50 runtime-dex.log
+
+      - name: Build debug APK
+        id: build
+        continue-on-error: true
+        run: |
+          ./gradlew :app:assembleDebug --no-daemon --stacktrace 2>&1 | tee build.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Report build errors as annotations
+        if: steps.build.outcome == 'failure'
+        run: |
+          echo "::error title=Gradle build failed::$(grep -E '^e: |FAILURE:|What went wrong|Caused by|error:|Execution failed|> ' build.log | head -25 | tr '\n' '~')"
+          tail -40 build.log
+
+      - name: Run engine unit tests
+        id: tests
+        run: |
+          ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee test.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Report test results as annotations
+        if: always()
+        run: |
+          if [ "${{ steps.tests.outcome }}" = "success" ]; then
+            echo "::notice title=Unit tests::all engine unit tests passed"
+          else
+            # The JUnit XML reports carry the full assertion messages and stack traces.
+            DETAIL=$(grep -h -A 6 "<failure" app/build/test-results/testDebugUnitTest/*.xml 2>/dev/null | head -60 | tr '\n' '~')
+            if [ -z "$DETAIL" ]; then
+              DETAIL=$(grep -E -A 5 'FAILED|AssertionError|Exception' test.log | head -40 | tr '\n' '~')
+            fi
+            echo "::error title=Unit tests failed::$DETAIL"
+            grep -h -A 6 "<failure" app/build/test-results/testDebugUnitTest/*.xml 2>/dev/null | head -60
+            grep -E "tests completed|FAILED" test.log | head -20
+          fi
+
+      # ------------------------------------------------------------------ real world APK smoke test
+      - name: Download a real APK to clone
+        id: smoke-download
+        continue-on-error: true
+        run: |
+          mkdir -p smoke
+          for url in \
+            https://f-droid.org/F-Droid.apk \
+            https://github.com/irshidali99/APP-cloner-/releases/download/test-apk-latest/app-debug.apk \
+            https://f-droid.org/repo/org.fdroid.fdroid_1020052.apk ; do
+            echo "trying $url"
+            if curl -fsSL --max-time 180 -o smoke/source.apk "$url" && [ -s smoke/source.apk ]; then
+              echo "downloaded $url"; break
+            fi
+          done
+          ls -l smoke || true
+
+      - name: Clone the real APK with the engine
+        id: smoke
+        if: steps.smoke-download.outcome == 'success' && steps.build.outcome == 'success'
+        continue-on-error: true
+        env:
+          CLONE_SMOKE_APK: ${{ github.workspace }}/smoke/source.apk
+          CLONE_SMOKE_OUT_DIR: ${{ github.workspace }}/smoke/output
+        run: |
+          ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace \
+            --tests '*RealApkSmokeTest*' 2>&1 | tee smoke.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Verify the engine's clone of the real app with apksigner
+        if: always()
+        run: |
+          BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          {
+            echo "--- smoke report ---"
+            cat smoke/output/smoke-report.txt 2>/dev/null || echo "no smoke report"
+          } | tee -a verify.txt
+
+          ENGINE_OUTPUT_REJECTED=0
+          for CLONE in $(ls smoke/output/*.apk 2>/dev/null); do
+            {
+              echo "--- apksigner verify: $CLONE ---"
+            } | tee -a verify.txt
+            "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$CLONE" 2>&1 | tee -a verify.txt
+            "$BUILD_TOOLS/aapt" dump badging "$CLONE" 2>/dev/null | grep -E "^package" | head -2 | tee -a verify.txt
+            if grep -q "DOES NOT VERIFY" verify.txt; then ENGINE_OUTPUT_REJECTED=1; fi
+          done
+
+          # Phase 3 hard gate: the injected runtime patch has to be visible in the clone the engine produced
+          # - as a `classesN.dex` entry and as the bootstrap provider inside the manifest.
+          RUNTIME_DEX_ENTRY=$(grep -oE 'runtime=classes[0-9]+\.dex' smoke/output/smoke-report.txt 2>/dev/null | head -1 | cut -d= -f2)
+          CLONE_APK=$(ls smoke/output/*.apk 2>/dev/null | head -1)
+          if [ -n "$CLONE_APK" ] && [ -n "$RUNTIME_DEX_ENTRY" ]; then
+            if unzip -Z1 "$CLONE_APK" | grep -qx "$RUNTIME_DEX_ENTRY"; then
+              echo "injected dex in the clone: $RUNTIME_DEX_ENTRY" | tee -a verify.txt
+            else
+              echo "::error title=Runtime patch not injected::the clone has no $RUNTIME_DEX_ENTRY entry"
+              exit 1
+            fi
+            if "$BUILD_TOOLS/aapt" dump xmltree "$CLONE_APK" AndroidManifest.xml 2>/dev/null | grep -q "com.appcloner.runtime.PatchProvider"; then
+              echo "bootstrap provider in the clone's manifest: yes" | tee -a verify.txt
+            else
+              echo "::error title=Bootstrap provider missing::the clone's manifest has no com.appcloner.runtime.PatchProvider"
+              exit 1
+            fi
+            "$BUILD_TOOLS/aapt" dump xmltree "$CLONE_APK" AndroidManifest.xml 2>/dev/null | grep -A 8 "PatchProvider" | head -20 | tee -a verify.txt
+          else
+            echo "::warning title=Runtime patch::no clone APK with an injected runtime patch was produced in this run"
+          fi
+
+          if [ -f smoke/output/smoke-report.txt ]; then
+            echo "::notice title=Real APK smoke::$(grep -E 'SMOKE|source=|originalPackage=|part=|leftovers=|runtime|Verifies|Verified using v2' verify.txt | tail -12 | tr '\n' '~')"
+          else
+            echo "::warning title=Real APK smoke::no real APK could be cloned in this run"
+          fi
+
+          # Hard gate: an APK the engine produced that apksigner rejects would not install on a phone.
+          if [ "$ENGINE_OUTPUT_REJECTED" = "1" ]; then
+            echo "::error title=Engine output rejected by apksigner::the engine's own clone does not verify - see verify.txt"
+            exit 1
+          fi
+
+      - name: Check that Room, the engine and the runtime patch made it into the APK
+        if: steps.build.outcome == 'success'
+        run: |
+          APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
+          # The runtime patch ships as an asset; without it phase 3 features silently do nothing.
+          if unzip -Z1 "$APK" | grep -qx "assets/runtime/patch.dex"; then
+            echo "runtime patch asset: present ($(unzip -p "$APK" assets/runtime/patch.dex | wc -c) bytes)" | tee -a verify.txt
+          else
+            echo "::error title=Runtime patch missing::assets/runtime/patch.dex is not inside the built APK, so cloned apps cannot get runtime features"
+            exit 1
+          fi
+          {
+            echo "--- generated sources on disk ---";
+            find app/build/generated -name "*Impl*" 2>/dev/null | head -10 || true;
+            find app/build/generated -type f 2>/dev/null | wc -l | sed 's/^/generated files: /';
+            echo "--- class names inside the dex files ---";
+            unzip -p "$APK" 'classes*.dex' > /tmp/all.dex 2>/dev/null || true;
+            for cls in AppDatabase_Impl CloneRecordDao_Impl ApkSignatureSchemeV2 AxmlEditor ArscEditor; do
+              echo "$cls: $(grep -ao "$cls" /tmp/all.dex | wc -l)";
+            done;
+          } | tee -a verify.txt
+          echo "::notice title=APK contents::$(grep -E 'generated files|Impl|: [0-9]+$' verify.txt | tail -8 | tr '\n' '~')"
+
+      - name: Verify the APK with the official tools
+        if: steps.build.outcome == 'success'
+        run: |
+          BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
+          {
+            echo "--- apksigner verify --verbose --print-certs: $APK ---";
+            "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" 2>&1 | head -12;
+            echo "--- zipalign -c -v 4 ---";
+            "$BUILD_TOOLS/zipalign" -c -v 4 "$APK" >/dev/null 2>&1 && echo "zipalign 4: OK" || echo "zipalign 4: FAILED";
+          } | tee -a verify.txt
+
+      - name: Assert the APK uses the stable test signing key
+        if: steps.build.outcome == 'success'
+        run: |
+          BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
+          APK_CERT=$("$BUILD_TOOLS/apksigner" verify --print-certs "$APK" | grep -m1 -i "certificate SHA-256 digest" | awk '{print $NF}' | tr -d ':' | tr 'A-F' 'a-f')
+          KEY_CERT=$("$JAVA_HOME/bin/keytool" -list -v -keystore ci/test-signing.jks -storepass android -alias androiddebugkey | grep -m1 "SHA256:" | awk '{print $2}' | tr -d ':' | tr 'A-F' 'a-f')
+          echo "apk certificate  : $APK_CERT"
+          echo "store certificate: $KEY_CERT"
+          {
+            echo "--- stable signing key check ---"
+            echo "apk certificate  : $APK_CERT"
+            echo "store certificate: $KEY_CERT"
+          } >> verify.txt
+          if [ -z "$APK_CERT" ] || [ "$APK_CERT" != "$KEY_CERT" ]; then
+            echo "::error title=Signing key mismatch::the APK is not signed with ci/test-signing.jks and could not be installed over the previous build"
+            exit 1
+          fi
+          echo "::notice title=Signing key::APK is signed with the committed test key, updates will install over earlier builds"
+
+      - name: Collect APK
+        if: always()
+        run: |
+          mkdir -p artifacts
+          find app/build/outputs/apk -name "*.apk" -exec cp {} artifacts/ \; 2>/dev/null || true
+          ls -l artifacts || true
+
+      - name: Publish the APK as a release asset
+        id: release
+        if: steps.build.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="test-apk-latest"
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" artifacts/*.apk \
+            --title "Test APK build ${GITHUB_RUN_NUMBER}" \
+            --notes "Debug APK built from ${GITHUB_SHA} by GitHub Actions, for on-device testing." \
+            --target "${GITHUB_SHA}"
+          echo "published=$TAG" >> "$GITHUB_OUTPUT"
+          gh release view "$TAG" --json assets --jq '.assets[].url'
+
+      - name: Upload build log and APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: |
+            build.log
+            test.log
+            smoke.log
+            verify.txt
+            smoke/output/**
+            artifacts/*.apk
+          if-no-files-found: ignore
+          retention-days: 30
+
+      # Diagnostics are committed back to the branch so a failing run can be inspected without access to
+      # the artifact store.
+      - name: Commit diagnostics when something failed
+        if: failure() || steps.tests.outcome == 'failure' || steps.smoke.outcome == 'failure'
+        run: |
+          mkdir -p ci-diagnostics
+          {
+            echo "# run ${GITHUB_RUN_NUMBER} (${GITHUB_SHA})"
+            echo "## build outcome: ${{ steps.build.outcome }}"
+            echo "## test outcome: ${{ steps.tests.outcome }}"
+            echo "## smoke outcome: ${{ steps.smoke.outcome }}"
+            echo
+            echo "## verify.txt"
+            cat verify.txt 2>/dev/null | tail -60
+            echo
+            echo "## build.log (tail)"
+            tail -120 build.log 2>/dev/null
+            echo
+            echo "## test.log (failure lines)"
+            grep -E "FAILED|expected|Caused by|tests completed|e: " test.log 2>/dev/null | head -60
+            echo
+            echo "## junit failure details"
+            grep -h -A 6 "<failure" app/build/test-results/testDebugUnitTest/*.xml 2>/dev/null | head -80
+            echo
+            echo "## smoke.log (tail)"
+            tail -120 smoke.log 2>/dev/null
+          } > ci-diagnostics/last-run.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f ci-diagnostics/last-run.txt
+          git commit -m "ci: diagnostics for run ${GITHUB_RUN_NUMBER} [skip ci]" || exit 0
+          git push origin HEAD:${GITHUB_REF_NAME} || true
+
+      # The patch dex is a build artifact of runtime-src/, but it has to be in the repository: the next run
+      # (and anyone building locally) must be able to package it without a toolchain.
+      - name: Commit the rebuilt runtime patch dex
+        if: always() && steps.runtime-dex.outcome == 'success'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f app/src/main/assets/runtime/patch.dex
+          if git diff --cached --quiet; then
+            echo "the runtime patch dex is unchanged"
+            exit 0
+          fi
+          git commit -m "ci: rebuild the runtime patch dex from runtime-src [skip ci]"
+          git push origin HEAD:${GITHUB_REF_NAME} || true

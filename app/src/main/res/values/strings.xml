@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">App Cloner</string>
+    <string name="nav_installed_apps">Apps</string>
+    <string name="nav_my_clones">My Clones</string>
+    <string name="nav_settings">Settings</string>
+    <string name="filter_all">All Apps</string>
+    <string name="filter_cloneable">Cloneable</string>
+    <string name="filter_cloned">Cloned</string>
+    <string name="search_hint">Search installed apps…</string>
+</resources>

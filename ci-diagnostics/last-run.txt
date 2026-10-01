@@ -1,0 +1,189 @@
+# run 12 (e3f29f48008cf426a44d2066fd53caff97b2a903)
+## build outcome: success
+## test outcome: failure
+## smoke outcome: success
+
+## verify.txt
+--- smoke report ---
+source=source.apk size=12426276 splits=0
+base entries=1097 icons=0 resourceTable=true
+part=clone-source.apk manifest=com.example.clone.smoke arsc=com.example.clone.smoke split=- v1=true v2=true schemes=[v1, v2] detail=v2 signature valid (RSA PKCS#1 v1.5 / SHA-256)
+cloneReady=1 apk(s), total=12549480 bytes
+--- apksigner verify: smoke/output/clone-source.apk ---
+V2 Signer: certificate DN: CN=App Cloner Smoke
+V2 Signer: certificate SHA-256 digest: 825c9ea5090f3b921879ce79ee0e31151a38eb27096ff5c979b8a034ab57312a
+V2 Signer: certificate SHA-1 digest: 740c79b7c54ccb471beba1c701823f0458f21ac9
+V2 Signer: certificate MD5 digest: b823c625383d0da4674fad921484dc69
+package: name='com.example.clone.smoke' versionCode='1023052' versionName='1.23.2' platformBuildVersionName='15' platformBuildVersionCode='35' compileSdkVersion='35' compileSdkVersionCodename='15'
+--- generated sources on disk ---
+app/build/generated/ksp/debug/kotlin/com/example/data/CloneRecordDao_Impl.kt
+app/build/generated/ksp/debug/kotlin/com/example/data/AppDatabase_Impl.kt
+generated files: 3
+--- class names inside the dex files ---
+AppDatabase_Impl: 8
+CloneRecordDao_Impl: 36
+ApkSignatureSchemeV2: 26
+AxmlEditor: 21
+ArscEditor: 26
+--- apksigner verify --verbose --print-certs: app/build/outputs/apk/debug/app-debug.apk ---
+Verifies
+Verified using v1 scheme (JAR signing): false
+Verified using v2 scheme (APK Signature Scheme v2): true
+Verified using v3 scheme (APK Signature Scheme v3): false
+Verified using v3.1 scheme (APK Signature Scheme v3.1): false
+Verified using v3.2 scheme (APK Signature Scheme v3.2): false
+Verified using v4 scheme (APK Signature Scheme v4): false
+Verified for SourceStamp: false
+Number of signers: 1
+V2 Signer: certificate DN: C=US, O=Android, CN=Android Debug
+V2 Signer: certificate SHA-256 digest: 90c99b2027dd499464055e7c128efac248a776245527c174609d5f42c7b3fae2
+V2 Signer: certificate SHA-1 digest: d8dfe7ee4552f73287d8660f7a2c88006f6b899e
+--- zipalign -c -v 4 ---
+zipalign 4: OK
+
+## build.log (tail)
+Downloading https://services.gradle.org/distributions/gradle-9.3.1-bin.zip
+.............10%.............20%.............30%.............40%.............50%.............60%.............70%.............80%.............90%.............100%
+
+Welcome to Gradle 9.3.1!
+
+Here are the highlights of this release:
+ - Test reporting improvements
+ - Error and warning improvements
+ - Build authoring improvements
+
+For more details see https://docs.gradle.org/9.3.1/release-notes.html
+
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/9.3.1/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+Calculating task graph as no cached configuration is available for tasks: :app:assembleDebug
+> Task :app:preBuild UP-TO-DATE
+> Task :app:generateDebugAssets UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:mergeDebugNativeDebugMetadata NO-SOURCE
+> Task :app:generateDebugResources
+> Task :app:generateDebugBuildConfig
+> Task :app:packageDebugResources
+> Task :app:javaPreCompileDebug
+> Task :app:processDebugNavigationResources
+> Task :app:checkDebugDuplicateClasses
+> Task :app:desugarDebugFileDependencies
+> Task :app:mergeDebugAssets
+> Task :app:compressDebugAssets
+> Task :app:parseDebugLocalResources
+> Task :app:generateDebugRFile
+> Task :app:kspDebugKotlin
+> Task :app:mergeExtDexDebug
+> Task :app:mergeLibDexDebug
+> Task :app:checkDebugAarMetadata
+> Task :app:mapDebugSourceSetPaths
+> Task :app:compileDebugNavigationResources
+> Task :app:createDebugCompatibleScreenManifests
+> Task :app:extractDeepLinksDebug
+> Task :app:mergeDebugResources
+> Task :app:mergeDebugJniLibFolders
+> Task :app:mergeDebugNativeLibs
+> Task :app:stripDebugDebugSymbols
+> Task :app:validateSigningDebug
+> Task :app:writeDebugAppMetadata
+> Task :app:writeDebugSigningConfigVersions
+Exception in thread "AWT-EventQueue-0" java.lang.NullPointerException: Cannot invoke "ksp.com.intellij.openapi.application.Application.getService(java.lang.Class)" because the return value of "ksp.com.intellij.openapi.application.ApplicationManager.getApplication()" is null
+	at ksp.com.intellij.openapi.fileEditor.FileDocumentManager.getInstance(FileDocumentManager.java:35)
+	at ksp.com.intellij.openapi.fileTypes.BinaryFileTypeDecompilers.lambda$notifyDecompilerSetChange$1(BinaryFileTypeDecompilers.java:29)
+	at java.desktop/java.awt.event.InvocationEvent.dispatch(InvocationEvent.java:318)
+	at java.desktop/java.awt.EventQueue.dispatchEventImpl(EventQueue.java:773)
+	at java.desktop/java.awt.EventQueue$4.run(EventQueue.java:720)
+	at java.desktop/java.awt.EventQueue$4.run(EventQueue.java:714)
+	at java.base/java.security.AccessController.doPrivileged(AccessController.java:400)
+	at java.base/java.security.ProtectionDomain$JavaSecurityAccessImpl.doIntersectionPrivilege(ProtectionDomain.java:87)
+	at java.desktop/java.awt.EventQueue.dispatchEvent(EventQueue.java:742)
+	at java.desktop/java.awt.EventDispatchThread.pumpOneEventForFilters(EventDispatchThread.java:203)
+	at java.desktop/java.awt.EventDispatchThread.pumpEventsForFilter(EventDispatchThread.java:124)
+	at java.desktop/java.awt.EventDispatchThread.pumpEventsForHierarchy(EventDispatchThread.java:113)
+	at java.desktop/java.awt.EventDispatchThread.pumpEvents(EventDispatchThread.java:109)
+	at java.desktop/java.awt.EventDispatchThread.pumpEvents(EventDispatchThread.java:101)
+	at java.desktop/java.awt.EventDispatchThread.run(EventDispatchThread.java:90)
+> Task :app:processDebugMainManifest
+> Task :app:compileDebugKotlin
+> Task :app:processDebugManifest
+> Task :app:processDebugManifestForPackage
+> Task :app:processDebugResources
+
+> Task :app:compileDebugKotlin
+w: file:///home/runner/work/APP-cloner-/APP-cloner-/app/src/main/java/com/example/data/AppDatabase.kt:23:19 'fun fallbackToDestructiveMigration(): RoomDatabase.Builder<AppDatabase>' is deprecated. Replace by overloaded version with parameter to indicate if all tables should be dropped or not.
+w: file:///home/runner/work/APP-cloner-/APP-cloner-/app/src/main/java/com/example/installer/PackageInstallerManager.kt:161:30 'static field ACTION_UNINSTALL_PACKAGE: String' is deprecated. Deprecated in Java.
+w: file:///home/runner/work/APP-cloner-/APP-cloner-/app/src/main/java/com/example/ui/screens/CloneDetailsScreen.kt:226:62 'val Icons.Filled.Launch: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.Launch.
+w: file:///home/runner/work/APP-cloner-/APP-cloner-/app/src/main/java/com/example/ui/screens/CloneReadySuccessScreen.kt:302:54 'val Icons.Filled.ListAlt: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.ListAlt.
+w: file:///home/runner/work/APP-cloner-/APP-cloner-/app/src/main/java/com/example/ui/screens/InstalledAppsScreen.kt:262:61 'val Icons.Filled.HelpOutline: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.HelpOutline.
+w: file:///home/runner/work/APP-cloner-/APP-cloner-/app/src/main/java/com/example/ui/screens/InstalledAppsScreen.kt:304:104 'val Icons.Filled.HelpOutline: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.HelpOutline.
+w: file:///home/runner/work/APP-cloner-/APP-cloner-/app/src/main/java/com/example/ui/screens/MyClonesScreen.kt:419:62 'val Icons.Filled.Launch: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.Launch.
+w: file:///home/runner/work/APP-cloner-/APP-cloner-/app/src/main/java/com/example/ui/screens/SettingsScreen.kt:283:58 'val Icons.Filled.HelpOutline: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.HelpOutline.
+
+> Task :app:processDebugJavaRes
+> Task :app:mergeDebugJavaResource
+> Task :app:compileDebugJavaWithJavac
+> Task :app:dexBuilderDebug
+> Task :app:mergeProjectDexDebug
+> Task :app:packageDebug
+> Task :app:assembleDebug
+> Task :app:createDebugApkListingFileRedirect
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/build-1790658085664.json
+
+BUILD SUCCESSFUL in 3m 39s
+38 actionable tasks: 38 executed
+Configuration cache entry stored.
+
+## test.log (failure lines)
+ClonePipelineTest > bundle transform re-targets every part and keeps the split names FAILED
+    java.lang.AssertionError: expected:<config.en> but was:<null>
+22 tests completed, 1 failed
+> Task :app:testDebugUnitTest FAILED
+Caused by: org.gradle.api.internal.exceptions.MarkedVerificationException: There were failing tests. See the report at: file:///home/runner/work/APP-cloner-/APP-cloner-/app/build/reports/tests/testDebugUnitTest/index.html
+BUILD FAILED in 42s
+
+## smoke.log (tail)
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/9.3.1/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+Calculating task graph as no cached configuration is available for tasks: :app:testDebugUnitTest --tests *RealApkSmokeTest*
+> Task :app:generateDebugAssets UP-TO-DATE
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugUnitTestBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:javaPreCompileDebug UP-TO-DATE
+> Task :app:generateDebugBuildConfig UP-TO-DATE
+> Task :app:generateDebugResources UP-TO-DATE
+> Task :app:packageDebugResources UP-TO-DATE
+> Task :app:mapDebugSourceSetPaths UP-TO-DATE
+> Task :app:mergeDebugResources UP-TO-DATE
+> Task :app:processDebugNavigationResources UP-TO-DATE
+> Task :app:checkDebugAarMetadata UP-TO-DATE
+> Task :app:createDebugCompatibleScreenManifests UP-TO-DATE
+> Task :app:compileDebugNavigationResources UP-TO-DATE
+> Task :app:extractDeepLinksDebug UP-TO-DATE
+> Task :app:parseDebugLocalResources UP-TO-DATE
+> Task :app:javaPreCompileDebugUnitTest UP-TO-DATE
+> Task :app:generateDebugRFile UP-TO-DATE
+> Task :app:mergeDebugAssets UP-TO-DATE
+> Task :app:kspDebugKotlin UP-TO-DATE
+> Task :app:processDebugMainManifest UP-TO-DATE
+> Task :app:processDebugManifest UP-TO-DATE
+> Task :app:processDebugManifestForPackage UP-TO-DATE
+> Task :app:processDebugUnitTestManifest UP-TO-DATE
+> Task :app:compileDebugKotlin UP-TO-DATE
+> Task :app:compileDebugJavaWithJavac UP-TO-DATE
+> Task :app:processDebugJavaRes UP-TO-DATE
+> Task :app:processDebugResources UP-TO-DATE
+> Task :app:packageDebugUnitTestForUnitTest UP-TO-DATE
+> Task :app:bundleDebugClassesToCompileJar UP-TO-DATE
+> Task :app:bundleDebugClassesToRuntimeJar UP-TO-DATE
+> Task :app:generateDebugUnitTestConfig UP-TO-DATE
+> Task :app:kspDebugUnitTestKotlin UP-TO-DATE
+> Task :app:compileDebugUnitTestKotlin UP-TO-DATE
+> Task :app:processDebugUnitTestJavaRes UP-TO-DATE
+> Task :app:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :app:testDebugUnitTest
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/smoke-1790658381655.json
+
+BUILD SUCCESSFUL in 14s
+32 actionable tasks: 1 executed, 31 up-to-date
+Configuration cache entry stored.

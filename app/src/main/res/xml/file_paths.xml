@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <files-path name="clones" path="clones/" />
+    <cache-path name="clones_cache" path="clones/" />
+    <external-files-path name="external_clones" path="clones/" />
+</paths>
