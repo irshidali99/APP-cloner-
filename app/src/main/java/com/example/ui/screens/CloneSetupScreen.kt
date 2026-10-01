@@ -535,6 +535,57 @@ fun CloneSetupScreen(
                     ) { value -> viewModel.updateRuntime { it.copy(floatingBackButton = value) } }
 
                     Text(
+                        text = "Notifications of this clone",
+                        fontWeight = FontWeight.Medium,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = "Android allows filtering only after you give this clone notification " +
+                            "access (the clone's details screen has a button for it).",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    var quietStart by remember { mutableStateOf(runtime.quietStart) }
+                    var quietEnd by remember { mutableStateOf(runtime.quietEnd) }
+                    var filterWords by remember { mutableStateOf(runtime.notificationFilter) }
+                    OutlinedTextField(
+                        value = quietStart,
+                        onValueChange = { value ->
+                            quietStart = value
+                            viewModel.setRuntimeQuietTime(value, quietEnd)
+                        },
+                        label = { Text("Quiet time from (HH:MM)") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("runtime_quiet_start")
+                    )
+                    OutlinedTextField(
+                        value = quietEnd,
+                        onValueChange = { value ->
+                            quietEnd = value
+                            viewModel.setRuntimeQuietTime(quietStart, value)
+                        },
+                        label = { Text("Quiet time to (HH:MM)") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("runtime_quiet_end")
+                    )
+                    OutlinedTextField(
+                        value = filterWords,
+                        onValueChange = { value ->
+                            filterWords = value
+                            viewModel.setRuntimeNotificationFilter(value)
+                        },
+                        label = { Text("Hide notifications containing (comma separated)") },
+                        singleLine = false,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("runtime_notification_filter")
+                    )
+
+                    Text(
                         text = "Language of the clone (Android 13 or newer)",
                         fontWeight = FontWeight.Medium,
                         style = MaterialTheme.typography.bodyMedium

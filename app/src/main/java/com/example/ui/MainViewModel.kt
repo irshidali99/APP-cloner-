@@ -238,6 +238,39 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Stores the quiet window as `HH:MM`. An incomplete entry is simply ignored (the field keeps the
+     * characters, the clone just does not get a window until both sides are valid).
+     */
+    fun setRuntimeQuietTime(start: String, end: String) {
+        val normalisedStart = RuntimeOptions.normaliseClock(start)
+        val normalisedEnd = RuntimeOptions.normaliseClock(end)
+        if (normalisedStart == null || normalisedEnd == null) {
+            _runtimeLockError.value = if (start.isBlank() && end.isBlank()) {
+                null
+            } else {
+                "Quiet time needs both times as HH:MM (for example 22:00 and 07:00)."
+            }
+            _runtimeOptions.value = _runtimeOptions.value.copy(quietStart = "", quietEnd = "")
+            return
+        }
+        if (normalisedStart == normalisedEnd) {
+            _runtimeLockError.value = "Quiet time start and end cannot be the same."
+            _runtimeOptions.value = _runtimeOptions.value.copy(quietStart = "", quietEnd = "")
+            return
+        }
+        _runtimeLockError.value = null
+        _runtimeOptions.value = _runtimeOptions.value.copy(
+            quietStart = normalisedStart,
+            quietEnd = normalisedEnd
+        )
+    }
+
+    /** Words (comma separated) that hide a notification of this clone. */
+    fun setRuntimeNotificationFilter(words: String) {
+        _runtimeOptions.value = _runtimeOptions.value.copy(notificationFilter = words)
+    }
+
     /** Clears the lock fields when a new app is set up. */
     fun resetRuntimeOptions() {
         _runtimeOptions.value = RuntimeOptions()

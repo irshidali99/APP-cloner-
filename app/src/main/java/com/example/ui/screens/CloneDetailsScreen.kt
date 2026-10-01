@@ -413,6 +413,49 @@ fun CloneDetailsScreen(
                         }
                     }
 
+                    // Notification filtering only works once the user allowed notification access for the
+                    // clone: Android never grants that silently, so the app offers a shortcut to the setting.
+                    if (record.runtimeSummary.contains("quiet time") ||
+                        record.runtimeSummary.contains("notification filter")
+                    ) {
+                        Card(
+                            shape = RoundedCornerShape(10.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFFEF9C3)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("notification_access_card")
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(
+                                    text = "Notification access needed",
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = Color(0xFF713F12)
+                                )
+                                Text(
+                                    text = "Quiet time and the notification filter only work after this clone " +
+                                        "is allowed to read its own notifications. Open the setting and turn " +
+                                        "on \"" + record.cloneName + "\".",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color(0xFF713F12)
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Button(
+                                    onClick = {
+                                        runCatching {
+                                            context.startActivity(
+                                                Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                                            )
+                                        }
+                                    },
+                                    modifier = Modifier.testTag("notification_access_button")
+                                ) {
+                                    Text("Open notification access")
+                                }
+                            }
+                        }
+                    }
+
                     // A stealth clone hides its launcher icon, so a pinned shortcut is the only way to start
                     // it from the home screen.
                     if (viewModel.cloneNeedsShortcut(record)) {

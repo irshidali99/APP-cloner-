@@ -21,7 +21,12 @@ object RuntimeRegistration {
 
     const val PROVIDER_CLASS = "com.appcloner.runtime.PatchProvider"
     const val LOCK_ACTIVITY_CLASS = "com.appcloner.runtime.LockActivity"
+    const val NOTIFICATION_LISTENER_CLASS = "com.appcloner.runtime.CloneNotificationListener"
     const val CONFIG_META = "com.appcloner.runtime.CONFIG"
+
+    /** The platform only binds a notification listener that is guarded by this permission. */
+    const val BIND_NOTIFICATION_LISTENER = "android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+    const val NOTIFICATION_LISTENER_ACTION = "android.service.notification.NotificationListenerService"
 
     private const val AUTHORITY_SUFFIX = ".appcloner.runtime"
     private const val INIT_ORDER = 1000
@@ -65,6 +70,25 @@ object RuntimeRegistration {
                 editor, lockActivity, "excludeFromRecents", android.R.attr.excludeFromRecents, true
             )
             applied.add("passcode lock screen")
+        }
+
+        if (options.notificationFeatures) {
+            // The clone's own notifications are filtered inside the clone; Android binds this service only
+            // after the user allowed notification access for the clone.
+            val service = editor.addChildElement(application, "service")
+            stringAttribute(editor, service, "name", android.R.attr.name, NOTIFICATION_LISTENER_CLASS)
+            stringAttribute(
+                editor, service, "permission", android.R.attr.permission, BIND_NOTIFICATION_LISTENER
+            )
+            booleanAttribute(editor, service, "exported", android.R.attr.exported, true)
+            booleanAttribute(editor, service, "enabled", android.R.attr.enabled, true)
+
+            val filter = editor.addChildElement(service, "intent-filter")
+            val action = editor.addChildElement(filter, "action")
+            stringAttribute(
+                editor, action, "name", android.R.attr.name, NOTIFICATION_LISTENER_ACTION
+            )
+            applied.add("notification filter service")
         }
         return applied
     }

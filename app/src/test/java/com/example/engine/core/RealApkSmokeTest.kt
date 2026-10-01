@@ -105,7 +105,10 @@ class RealApkSmokeTest {
             blockScreenshots = true,
             incognitoWipe = true,
             confirmExit = true,
-            floatingBackButton = true
+            floatingBackButton = true,
+            quietStart = "22:00",
+            quietEnd = "07:00",
+            notificationFilter = "sale"
         )
         val runtimeDex = listOf(
             File("src/main/assets/runtime/patch.dex"),

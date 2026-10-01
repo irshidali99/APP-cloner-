@@ -38,6 +38,11 @@ class RuntimePatcherTest {
         assertTrue("PatchProvider missing from the dex", text.contains("com/appcloner/runtime/PatchProvider"))
         assertTrue("LockActivity missing from the dex", text.contains("com/appcloner/runtime/LockActivity"))
         assertTrue("AppClonerPatch missing from the dex", text.contains("com/appcloner/runtime/AppClonerPatch"))
+        assertTrue(
+            "CloneNotificationListener missing from the dex",
+            text.contains("com/appcloner/runtime/CloneNotificationListener")
+        )
+        assertTrue("PatternView missing from the dex", text.contains("com/appcloner/runtime/PatternView"))
     }
 
     @Test

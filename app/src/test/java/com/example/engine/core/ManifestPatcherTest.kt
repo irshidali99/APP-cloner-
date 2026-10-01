@@ -279,6 +279,42 @@ class ManifestPatcherTest {
     }
 
     @Test
+    fun quietTimeRegistersTheNotificationListenerService() {
+        val runtime = RuntimeOptions(quietStart = "22:00", quietEnd = "07:00")
+        val editor = AxmlEditor.parse(TestFixtures.manifestBytes())
+        val applied = RuntimeRegistration.apply(editor, runtime, "com.example.clone.smoke")
+        val reparsed = AxmlEditor.parse(editor.toByteArray())
+
+        val service = reparsed.startElements().firstOrNull { element ->
+            reparsed.elementName(element) == "service" &&
+                reparsed.findAttribute(element, ManifestRules.ANDROID_NAMESPACE, "name")
+                    ?.let { reparsed.string(it.rawValue) } == RuntimeRegistration.NOTIFICATION_LISTENER_CLASS
+        }
+        assertNotNull("the notification listener was not registered: ${dump(reparsed)}", service)
+        // Without the platform permission the system would never bind the service.
+        assertEquals(
+            RuntimeRegistration.BIND_NOTIFICATION_LISTENER,
+            reparsed.findAttribute(service!!, ManifestRules.ANDROID_NAMESPACE, "permission")
+                ?.let { reparsed.string(it.rawValue) }
+        )
+        assertEquals(
+            -1,
+            reparsed.findAttribute(service, ManifestRules.ANDROID_NAMESPACE, "exported")?.valueData
+        )
+        val action = reparsed.startElements().firstOrNull { element ->
+            reparsed.elementName(element) == "action" &&
+                reparsed.findAttribute(element, ManifestRules.ANDROID_NAMESPACE, "name")
+                    ?.let { reparsed.string(it.rawValue) } ==
+                RuntimeRegistration.NOTIFICATION_LISTENER_ACTION
+        }
+        assertNotNull("the listener intent filter is missing: ${dump(reparsed)}", action)
+        assertTrue(
+            "the report does not mention the listener: $applied",
+            applied.any { it.contains("notification filter service") }
+        )
+    }
+
+    @Test
     fun withoutRuntimeOptionsNoExtraComponentsAreAdded() {
         val editor = AxmlEditor.parse(TestFixtures.manifestBytes())
         val before = editor.startElements().size

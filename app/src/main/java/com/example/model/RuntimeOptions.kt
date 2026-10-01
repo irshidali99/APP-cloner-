@@ -44,8 +44,30 @@ data class RuntimeOptions(
     /** Shows a small back button inside the clone (useful on large screens). */
     val floatingBackButton: Boolean = false,
     /** Display language of the clone as a BCP-47 tag (Android 13+), empty = system language. */
-    val appLanguage: String = ""
+    val appLanguage: String = "",
+    /**
+     * Quiet time: during this window the clone's own notifications are cancelled. Both are `HH:MM`
+     * (empty = off), and the window may cross midnight (22:00 - 07:00).
+     */
+    val quietStart: String = "",
+    val quietEnd: String = "",
+    /** Comma separated words: a clone notification containing one of them is cancelled. */
+    val notificationFilter: String = ""
 ) {
+
+    /** The words of [notificationFilter], cleaned up. */
+    fun filterWords(): List<String> = notificationFilter
+        .split(",")
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+
+    /** True when a usable quiet window is configured. */
+    val quietTimeEnabled: Boolean
+        get() = CLOCK.matches(quietStart.trim()) && CLOCK.matches(quietEnd.trim()) &&
+            quietStart.trim() != quietEnd.trim()
+
+    /** True when the clone's notifications have to be watched at all (needs user granted access). */
+    val notificationFeatures: Boolean get() = quietTimeEnabled || filterWords().isNotEmpty()
 
     val lockEnabled: Boolean
         get() = when (lockMode) {
@@ -56,7 +78,8 @@ data class RuntimeOptions(
 
     val isEmpty: Boolean
         get() = !lockEnabled && !blockScreenshots && !incognitoWipe && !exitOnScreenOff &&
-            !forceDarkMode && !confirmExit && !shakeToExit && !floatingBackButton && appLanguage.isBlank()
+            !forceDarkMode && !confirmExit && !shakeToExit && !floatingBackButton && appLanguage.isBlank() &&
+            !notificationFeatures
 
     /** The configuration string the injected patch reads from its meta-data. */
     fun configString(): String = buildString {
@@ -71,6 +94,13 @@ data class RuntimeOptions(
         append(";shake=").append(if (shakeToExit) "1" else "0")
         append(";fab=").append(if (floatingBackButton) "1" else "0")
         append(";lang=").append(appLanguage)
+        append(";quiet=").append(if (quietTimeEnabled) "${quietStart.trim()}-${quietEnd.trim()}" else "")
+        append(";nfilter=").append(
+            // The patch splits on '|', the setup screen takes commas; ';' and '=' would break the pairs.
+            filterWords()
+                .map { word -> word.replace(";", " ").replace("=", " ").replace("|", " ") }
+                .joinToString("|")
+        )
     }
 
     /** Human readable list for the clone details screen. */
@@ -90,6 +120,8 @@ data class RuntimeOptions(
         if (shakeToExit) items.add("shake to exit")
         if (floatingBackButton) items.add("floating back button")
         if (appLanguage.isNotBlank()) items.add("language $appLanguage")
+        if (quietTimeEnabled) items.add("quiet time ${quietStart.trim()}-${quietEnd.trim()}")
+        if (filterWords().isNotEmpty()) items.add("notification filter (${filterWords().size} word(s))")
         return if (items.isEmpty()) "none" else items.joinToString(", ")
     }
 
@@ -102,6 +134,18 @@ data class RuntimeOptions(
     companion object {
 
         const val MIN_PASSCODE_LENGTH = 4
+        /** `HH:MM`, 24 hour clock, as typed on the setup screen. */
+        private val CLOCK = Regex("^([01]?[0-9]|2[0-3]):[0-5][0-9]$")
+
+        /** Normalises "9:5" to "09:05" so the injected patch always sees the same shape. */
+        fun normaliseClock(value: String): String? {
+            val trimmed = value.trim()
+            if (!CLOCK.matches(trimmed)) return null
+            val parts = trimmed.split(":")
+            val hour = parts[0].toInt()
+            val minute = parts[1].toInt()
+            return (if (hour < 10) "0$hour" else "$hour") + ":" + (if (minute < 10) "0$minute" else "$minute")
+        }
         const val MIN_PATTERN_DOTS = 4
         private const val MIN_HASH_LENGTH = 32
         private const val RESET_SALT = "appcloner-reset:"

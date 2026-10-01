@@ -59,6 +59,9 @@ public final class AppClonerPatch implements Application.ActivityLifecycleCallba
     private static String lockHash = "";
     private static String patternHash = "";
     private static String appLanguage = "";
+    private static String quietStart = "";
+    private static String quietEnd = "";
+    private static String[] notificationWords = null;
     private static boolean blockScreenshots;
     private static boolean incognitoWipe;
     private static boolean exitOnScreenOff;
@@ -105,6 +108,9 @@ public final class AppClonerPatch implements Application.ActivityLifecycleCallba
         lockHash = "";
         patternHash = "";
         appLanguage = "";
+        quietStart = "";
+        quietEnd = "";
+        notificationWords = null;
         blockScreenshots = false;
         incognitoWipe = false;
         exitOnScreenOff = false;
@@ -129,6 +135,8 @@ public final class AppClonerPatch implements Application.ActivityLifecycleCallba
             else if ("shake".equals(key)) shakeToExit = "1".equals(value);
             else if ("fab".equals(key)) floatingBackButton = "1".equals(value);
             else if ("lang".equals(key)) appLanguage = value;
+            else if ("quiet".equals(key)) setQuietWindow(value);
+            else if ("nfilter".equals(key)) setNotificationFilter(value);
         }
     }
 
@@ -200,6 +208,88 @@ public final class AppClonerPatch implements Application.ActivityLifecycleCallba
         try {
             Toast.makeText(context, message, Toast.LENGTH_SHORT).show();
         } catch (Throwable ignored) {
+        }
+    }
+
+    /** Parses "22:00-07:00" into the quiet window. */
+    private static void setQuietWindow(String value) {
+        try {
+            int separator = value.indexOf('-');
+            if (separator <= 0) return;
+            String start = value.substring(0, separator).trim();
+            String end = value.substring(separator + 1).trim();
+            if (minutesOfDay(start) < 0 || minutesOfDay(end) < 0) return;
+            quietStart = start;
+            quietEnd = end;
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** Parses the filter words ("word1|word2"), lower cased. */
+    private static void setNotificationFilter(String value) {
+        try {
+            if (value == null || value.length() == 0) {
+                notificationWords = null;
+                return;
+            }
+            String[] raw = value.split("\\|");
+            java.util.ArrayList<String> words = new java.util.ArrayList<String>();
+            for (String word : raw) {
+                String trimmed = word.trim();
+                if (trimmed.length() > 0) words.add(trimmed.toLowerCase());
+            }
+            notificationWords = words.isEmpty() ? null : words.toArray(new String[words.size()]);
+        } catch (Throwable ignored) {
+            notificationWords = null;
+        }
+    }
+
+    private static int minutesOfDay(String clock) {
+        try {
+            int separator = clock.indexOf(':');
+            if (separator <= 0) return -1;
+            int hour = Integer.parseInt(clock.substring(0, separator).trim());
+            int minute = Integer.parseInt(clock.substring(separator + 1).trim());
+            if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return -1;
+            return hour * 60 + minute;
+        } catch (Throwable error) {
+            return -1;
+        }
+    }
+
+    /** True during the configured quiet window (handles windows across midnight). */
+    static boolean inQuietWindow() {
+        try {
+            int start = minutesOfDay(quietStart);
+            int end = minutesOfDay(quietEnd);
+            if (start < 0 || end < 0 || start == end) return false;
+            java.util.Calendar now = java.util.Calendar.getInstance();
+            int minutes = now.get(java.util.Calendar.HOUR_OF_DAY) * 60 + now.get(java.util.Calendar.MINUTE);
+            if (start < end) return minutes >= start && minutes < end;
+            return minutes >= start || minutes < end;
+        } catch (Throwable error) {
+            return false;
+        }
+    }
+
+    /** True when this notification of the clone has to be hidden from the user. */
+    static boolean shouldBlockNotification(Object statusBarNotification) {
+        try {
+            if (statusBarNotification == null) return false;
+            if (inQuietWindow()) return true;
+            String[] words = notificationWords;
+            if (words == null || words.length == 0) return false;
+            String text = CloneNotificationListener.textOf(
+                (android.service.notification.StatusBarNotification) statusBarNotification
+            );
+            if (text.length() == 0) return false;
+            String lower = text.toLowerCase();
+            for (String word : words) {
+                if (lower.contains(word)) return true;
+            }
+            return false;
+        } catch (Throwable error) {
+            return false;
         }
     }
 

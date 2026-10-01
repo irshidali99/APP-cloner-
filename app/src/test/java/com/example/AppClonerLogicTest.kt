@@ -416,6 +416,43 @@ class AppClonerLogicTest {
     }
 
     @Test
+    fun testRuntimeQuietTimeAndNotificationFilter() {
+        val options = RuntimeOptions(
+            quietStart = "22:00",
+            quietEnd = "07:00",
+            notificationFilter = "sale, offer ,,"
+        )
+        assertTrue(options.quietTimeEnabled)
+        assertTrue(options.notificationFeatures)
+        assertEquals(listOf("sale", "offer"), options.filterWords())
+        assertTrue(
+            options.configString().contains(";quiet=22:00-07:00;nfilter=sale|offer"),
+            options.configString()
+        )
+        assertEquals(
+            "quiet time 22:00-07:00, notification filter (2 word(s))",
+            options.summary()
+        )
+
+        // Half a window (or the same time on both sides) is not a window.
+        assertFalse(RuntimeOptions(quietStart = "22:00").quietTimeEnabled)
+        assertFalse(RuntimeOptions(quietStart = "22:00", quietEnd = "22:00").quietTimeEnabled)
+        // A filter word must not be able to break the key/value pairs of the config string.
+        val hostile = RuntimeOptions(notificationFilter = "a=b;c|d")
+        assertFalse(hostile.configString().contains("nfilter=a=b;c|d"))
+        assertEquals("nfilter=a b c d", hostile.configString().substringAfter(";nfilter="))
+    }
+
+    @Test
+    fun testRuntimeClockNormalisation() {
+        assertEquals("09:05", RuntimeOptions.normaliseClock("9:5"))
+        assertEquals("22:00", RuntimeOptions.normaliseClock(" 22:00 "))
+        assertEquals(null, RuntimeOptions.normaliseClock("24:00"))
+        assertEquals(null, RuntimeOptions.normaliseClock("7"))
+        assertEquals(null, RuntimeOptions.normaliseClock(""))
+    }
+
+    @Test
     fun testRuntimeLockModeKeysMatchThePatch() {
         assertEquals("none", LockMode.NONE.key)
         assertEquals("passcode", LockMode.PASSCODE.key)
