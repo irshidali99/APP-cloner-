@@ -425,10 +425,7 @@ class AppClonerLogicTest {
         assertTrue(options.quietTimeEnabled)
         assertTrue(options.notificationFeatures)
         assertEquals(listOf("sale", "offer"), options.filterWords())
-        assertTrue(
-            options.configString().contains(";quiet=22:00-07:00;nfilter=sale|offer"),
-            options.configString()
-        )
+        assertTrue(options.configString(), options.configString().contains(";quiet=22:00-07:00;nfilter=sale|offer"))
         assertEquals(
             "quiet time 22:00-07:00, notification filter (2 word(s))",
             options.summary()
