@@ -148,9 +148,17 @@ class StringPool(
             return writer.toByteArray()
         }
 
+        /**
+         * Writes the 1-2 byte length of a UTF-8 string.
+         *
+         * The reader treats every first byte with the high bit set as the start of a two byte length
+         * (`((first and 0x7F) shl 8) or second`), so lengths above 0x7F - not above 0xFF - have to use the
+         * two byte form. Writing 128..255 as a single byte made the platform read a wrong length and
+         * shifted every following string: app labels, class names and action strings came out broken.
+         */
         private fun writeVarint8(writer: LeWriter, value: Int) {
-            if (value > 0xFF) {
-                writer.u8((value ushr 8) or 0x80)
+            if (value > 0x7F) {
+                writer.u8(((value ushr 8) and 0x7F) or 0x80)
                 writer.u8(value and 0xFF)
             } else {
                 writer.u8(value)

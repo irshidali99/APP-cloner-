@@ -1,5 +1,6 @@
 package com.example
 
+import com.example.engine.core.StringPool
 import com.example.model.BatchItem
 import com.example.model.BatchProgress
 import com.example.model.BatchState
@@ -323,6 +324,31 @@ class AppClonerLogicTest {
         assertEquals(mods.largeHeap, restored.largeHeap)
         assertEquals(setOf("camera", "location"), restored.removePermissionGroups)
         assertEquals("1.0-clone", restored.versionName)
+    }
+
+    // ------------------------------------------------------------------ string pool
+
+    @Test
+    fun testStringPoolRoundTripsLongStrings() {
+        // Strings of 128..255 bytes used to be written with a one byte length, which made every reader
+        // (including Android's) shift: app labels and long action strings came out broken.
+        val short = "short"
+        val boundary = "x".repeat(127)
+        val oneByteOver = "y".repeat(128)
+        val twoByte = "z".repeat(300)
+        val unicode = "\u0627\u0631\u062f\u0648 ".repeat(40) // 200 characters, more bytes in UTF-8
+
+        for (utf8 in listOf(true, false)) {
+            val pool = StringPool(mutableListOf(short, boundary, oneByteOver, twoByte, unicode), utf8, false)
+            val rebuilt = StringPool.parse(pool.build(), 0)
+            assertEquals(utf8, rebuilt.utf8)
+            assertEquals(5, rebuilt.stringCount)
+            assertEquals(short, rebuilt.get(0))
+            assertEquals(boundary, rebuilt.get(1))
+            assertEquals(oneByteOver, rebuilt.get(2))
+            assertEquals(twoByte, rebuilt.get(3))
+            assertEquals(unicode, rebuilt.get(4))
+        }
     }
 
     // ------------------------------------------------------------------ runtime features (phase 3)
