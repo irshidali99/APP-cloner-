@@ -135,7 +135,7 @@ data class RuntimeOptions(
 
         const val MIN_PASSCODE_LENGTH = 4
         /** `HH:MM`, 24 hour clock, as typed on the setup screen. */
-        private val CLOCK = Regex("^([01]?[0-9]|2[0-3]):[0-5][0-9]$")
+        private val CLOCK = Regex("^([01]?[0-9]|2[0-3]):([0-5]?[0-9])$")
 
         /** Normalises "9:5" to "09:05" so the injected patch always sees the same shape. */
         fun normaliseClock(value: String): String? {

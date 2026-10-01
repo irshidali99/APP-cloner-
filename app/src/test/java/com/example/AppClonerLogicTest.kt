@@ -403,14 +403,16 @@ class AppClonerLogicTest {
         )
         assertEquals(
             "mode=passcode;lock=03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4" +
-                ";pattern=;shots=1;wipe=0;screenoff=1;dark=1;confirm=1;shake=0;fab=1;lang=ur",
+                ";pattern=;shots=1;wipe=0;screenoff=1;dark=1;confirm=1;shake=0;fab=1;lang=ur" +
+                ";quiet=;nfilter=",
             options.configString()
         )
         val empty = RuntimeOptions()
         assertTrue(empty.isEmpty)
         // The keys have to stay exactly like this: the injected patch parses them by name.
         assertEquals(
-            "mode=none;lock=;pattern=;shots=0;wipe=0;screenoff=0;dark=0;confirm=0;shake=0;fab=0;lang=",
+            "mode=none;lock=;pattern=;shots=0;wipe=0;screenoff=0;dark=0;confirm=0;shake=0;fab=0;lang=" +
+                ";quiet=;nfilter=",
             empty.configString()
         )
     }
@@ -437,7 +439,7 @@ class AppClonerLogicTest {
         // A filter word must not be able to break the key/value pairs of the config string.
         val hostile = RuntimeOptions(notificationFilter = "a=b;c|d")
         assertFalse(hostile.configString().contains("nfilter=a=b;c|d"))
-        assertEquals("nfilter=a b c d", hostile.configString().substringAfter(";nfilter="))
+        assertEquals("a b c d", hostile.configString().substringAfter(";nfilter="))
     }
 
     @Test
