@@ -34,7 +34,11 @@ data class CloneRecord(
     /** Human readable list of the clone mods that were applied to this clone. */
     val modsSummary: String = "",
     /** Expansion (.obb) files of the original app, comma separated (empty when there are none). */
-    val obbFiles: String = ""
+    val obbFiles: String = "",
+    /** Runtime features (phase 3) injected into this clone, in human readable form. */
+    val runtimeSummary: String = "",
+    /** Reset code that unlocks this clone when its passcode is forgotten (empty when it has no lock). */
+    val runtimeResetCode: String = ""
 ) {
     val isInstalled: Boolean
         get() = installStatus == STATUS_INSTALLED

@@ -97,6 +97,28 @@ class RealApkSmokeTest {
         }
         report("originalPackage=${originalPackage ?: "?"}")
 
+        // Phase 3: build the runtime patch exactly like the app does (prebuilt dex + manifest components),
+        // so CI verifies the injected dex and the registered provider on a real world APK.
+        val runtimeOptions = com.example.model.RuntimeOptions(
+            passcodeHash = com.example.model.RuntimeOptions.hash("1234"),
+            blockScreenshots = true,
+            incognitoWipe = true
+        )
+        val runtimeDex = listOf(
+            File("src/main/assets/runtime/patch.dex"),
+            File("app/src/main/assets/runtime/patch.dex")
+        ).firstOrNull { it.isFile }?.readBytes()
+        val runtimeInjection = runtimeDex
+            ?.takeIf { com.example.engine.runtime.RuntimePatcher.isDex(it) }
+            ?.let { bytes ->
+                RuntimeInjection(
+                    dexEntryName = com.example.engine.runtime.RuntimePatcher.nextDexEntryName(source),
+                    dexBytes = bytes,
+                    options = runtimeOptions
+                )
+            }
+        report("runtimePatch=" + (runtimeInjection?.dexEntryName ?: "unavailable"))
+
         val parts: List<File>
         val baseReport: CloneReport
 
@@ -108,7 +130,8 @@ class RealApkSmokeTest {
                     outputApk = output,
                     newPackage = newPackage,
                     newLabel = "Smoke Clone",
-                    iconPng = ByteArray(600) { 0x55 }
+                    iconPng = ByteArray(600) { 0x55 },
+                    runtime = runtimeInjection
                 ),
                 certificate = certificate,
                 privateKey = pair.private
@@ -122,7 +145,8 @@ class RealApkSmokeTest {
                     outputDirectory = outputDirectory,
                     newPackage = newPackage,
                     newLabel = "Smoke Clone",
-                    iconPng = ByteArray(600) { 0x55 }
+                    iconPng = ByteArray(600) { 0x55 },
+                    runtime = runtimeInjection
                 ),
                 certificate = certificate,
                 privateKey = pair.private
@@ -135,6 +159,18 @@ class RealApkSmokeTest {
 
         report("base entries=${baseReport.entriesWritten} icons=${baseReport.iconEntriesReplaced.size} " +
             "resourceTable=${baseReport.resourceTableRewritten}")
+        report("runtime=" + (baseReport.runtimeDexEntry ?: "none") + " options=" + runtimeOptions.summary())
+        assertEquals(
+            "the runtime dex was not written into the clone",
+            runtimeInjection?.dexEntryName,
+            baseReport.runtimeDexEntry
+        )
+        if (runtimeInjection != null) {
+            assertTrue(
+                "the runtime components were not registered: ${baseReport.appliedMods}",
+                baseReport.appliedMods.any { it.contains("runtime bootstrap provider") }
+            )
+        }
 
         for (part in parts) {
             ApkSignatureSchemeV2.signInPlace(part, certificate, pair.private)

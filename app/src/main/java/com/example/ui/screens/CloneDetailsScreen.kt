@@ -372,6 +372,47 @@ fun CloneDetailsScreen(
                         }
                     }
 
+                    // Runtime features (phase 3): what lives inside the clone's own code.
+                    if (record.runtimeSummary.isNotBlank()) {
+                        Card(
+                            shape = RoundedCornerShape(10.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFF0FDF4)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("runtime_card")
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(
+                                    text = "Runtime features",
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = Color(0xFF14532D)
+                                )
+                                Text(
+                                    text = record.runtimeSummary,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color(0xFF14532D)
+                                )
+                                if (record.runtimeResetCode.isNotBlank()) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = "Reset code (unlocks the clone when the passcode is " +
+                                            "forgotten):",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color(0xFF166534)
+                                    )
+                                    Text(
+                                        text = record.runtimeResetCode,
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = Color(0xFF14532D),
+                                        modifier = Modifier.testTag("runtime_reset_code")
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     // A stealth clone hides its launcher icon, so a pinned shortcut is the only way to start
                     // it from the home screen.
                     if (viewModel.cloneNeedsShortcut(record)) {

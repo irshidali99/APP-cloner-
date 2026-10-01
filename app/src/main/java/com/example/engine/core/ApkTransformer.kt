@@ -39,7 +39,25 @@ data class CloneRequest(
      */
     val iconPng: ByteArray? = null,
     /** Optional clone mods (launcher, privacy, storage, version, permissions). */
-    val mods: CloneMods = CloneMods()
+    val mods: CloneMods = CloneMods(),
+    /**
+     * Optional runtime patch (phase 3): an extra dex file with the injected code plus the manifest
+     * components that make the platform load it.
+     */
+    val runtime: RuntimeInjection? = null
+)
+
+/**
+ * A ready to inject runtime patch: [dexBytes] is written as [dexEntryName] (`classesN.dex`) and the
+ * manifest gets a bootstrap provider plus the configuration all features read.
+ *
+ * The dex is compiled once by CI (`scripts/build-runtime-dex.sh`) and ships inside App Cloner, so cloning
+ * on the phone never needs a compiler.
+ */
+class RuntimeInjection(
+    val dexEntryName: String,
+    val dexBytes: ByteArray,
+    val options: com.example.model.RuntimeOptions
 )
 
 /** Which part of an app bundle an APK is. */
@@ -69,7 +87,9 @@ data class CloneReport(
     /** Permissions owned by the original app that were re-targeted to the new package name. */
     val renamedPermissions: List<String> = emptyList(),
     /** Clone mods that were applied to this part, in human readable form. */
-    val appliedMods: List<String> = emptyList()
+    val appliedMods: List<String> = emptyList(),
+    /** Name of the injected runtime dex entry (`classes2.dex`), `null` when nothing was injected. */
+    val runtimeDexEntry: String? = null
 )
 
 /** An app bundle to clone: the base APK plus every configuration/feature split. */
@@ -80,7 +100,9 @@ data class CloneBundleRequest(
     val newPackage: String,
     val newLabel: String? = null,
     val iconPng: ByteArray? = null,
-    val mods: CloneMods = CloneMods()
+    val mods: CloneMods = CloneMods(),
+    /** The runtime patch is injected into the base APK: a split holds no code. */
+    val runtime: RuntimeInjection? = null
 )
 
 /** Result of cloning a whole bundle. */
@@ -170,7 +192,16 @@ object ApkTransformer {
                 editor = editor,
                 mods = request.mods,
                 isBasePart = role == CloneRole.BASE
-            )
+            ).toMutableList()
+
+            // The runtime patch registers its own components (bootstrap provider, lock screen).
+            if (role == CloneRole.BASE && request.runtime != null) {
+                appliedMods += RuntimeRegistration.apply(
+                    editor = editor,
+                    options = request.runtime.options,
+                    clonePackage = request.newPackage
+                )
+            }
 
             if (rewriteReport.foreignAuthorities.isNotEmpty()) {
                 warnings.add(
@@ -259,6 +290,19 @@ object ApkTransformer {
                 }
             }
 
+            // ---- injected runtime patch ----------------------------------------------------------
+            var runtimeDexEntry: String? = null
+            val injection = request.runtime
+            if (injection != null && role == CloneRole.BASE && injection.dexBytes.isNotEmpty()) {
+                writer.writeEntry(
+                    injection.dexEntryName, injection.dexBytes, alignment = 4, compress = true,
+                    dosTime = sourceTimestamp.dosTime, dosDate = sourceTimestamp.dosDate
+                )
+                entryDigests[injection.dexEntryName] = digestOf(digest, injection.dexBytes)
+                runtimeDexEntry = injection.dexEntryName
+                entriesWritten++
+            }
+
             // ---- v1 signature --------------------------------------------------------------------
             val signer = JarV1Signer(certificate, privateKey)
             val signed = signer.sign(entryDigests, excluded = emptySet())
@@ -283,7 +327,8 @@ object ApkTransformer {
                 role = role,
                 splitName = readSplitName(editor),
                 renamedPermissions = rewriteReport.renamedPermissions,
-                appliedMods = appliedMods
+                appliedMods = appliedMods,
+                runtimeDexEntry = runtimeDexEntry
             )
         } finally {
             archive.close()
@@ -314,7 +359,8 @@ object ApkTransformer {
                 newPackage = request.newPackage,
                 newLabel = request.newLabel,
                 iconPng = request.iconPng,
-                mods = request.mods
+                mods = request.mods,
+                runtime = request.runtime
             ),
             certificate = certificate,
             privateKey = privateKey,

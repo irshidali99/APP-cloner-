@@ -27,7 +27,11 @@ data class CloneOutcome(
     /** Signature schemes verified on the parts, e.g. `v1+v2`. */
     val signatureSchemes: String = "",
     /** Expansion (.obb) files of the original app - a clone of a game needs them under its own package. */
-    val obbFiles: List<File> = emptyList()
+    val obbFiles: List<File> = emptyList(),
+    /** Runtime features (phase 3) that were injected into this clone, in human readable form. */
+    val runtimeSummary: String = "",
+    /** Code that unlocks a locked clone when the passcode is forgotten (shown in the clone details). */
+    val runtimeResetCode: String = ""
 ) {
     /** True when the source app keeps game assets in expansion files. */
     val hasObb: Boolean get() = obbFiles.isNotEmpty()

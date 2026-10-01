@@ -35,6 +35,15 @@ jobs:
             echo "::warning title=Test signing key missing::APKs will be signed with a random debug key and cannot be installed over each other"
           fi
 
+      # Phase 3 runtime features are injected into a clone as an extra dex file. It is compiled here, from
+      # runtime-src/, with the exact Android API level the clones need - the phone never needs a compiler.
+      - name: Build the runtime patch dex
+        id: runtime-dex
+        run: |
+          bash scripts/build-runtime-dex.sh
+          ls -l app/src/main/assets/runtime/patch.dex
+          echo "::notice title=Runtime patch::patch dex built ($(wc -c < app/src/main/assets/runtime/patch.dex) bytes)"
+
       - name: Build debug APK
         id: build
         continue-on-error: true
@@ -118,8 +127,30 @@ jobs:
             if grep -q "DOES NOT VERIFY" verify.txt; then ENGINE_OUTPUT_REJECTED=1; fi
           done
 
+          # Phase 3 hard gate: the injected runtime patch has to be visible in the clone the engine produced
+          # - as a `classesN.dex` entry and as the bootstrap provider inside the manifest.
+          RUNTIME_DEX_ENTRY=$(grep -oE 'runtime=classes[0-9]+\.dex' smoke/output/smoke-report.txt 2>/dev/null | head -1 | cut -d= -f2)
+          CLONE_APK=$(ls smoke/output/*.apk 2>/dev/null | head -1)
+          if [ -n "$CLONE_APK" ] && [ -n "$RUNTIME_DEX_ENTRY" ]; then
+            if unzip -Z1 "$CLONE_APK" | grep -qx "$RUNTIME_DEX_ENTRY"; then
+              echo "injected dex in the clone: $RUNTIME_DEX_ENTRY" | tee -a verify.txt
+            else
+              echo "::error title=Runtime patch not injected::the clone has no $RUNTIME_DEX_ENTRY entry"
+              exit 1
+            fi
+            if "$BUILD_TOOLS/aapt" dump xmltree "$CLONE_APK" AndroidManifest.xml 2>/dev/null | grep -q "com.appcloner.runtime.PatchProvider"; then
+              echo "bootstrap provider in the clone's manifest: yes" | tee -a verify.txt
+            else
+              echo "::error title=Bootstrap provider missing::the clone's manifest has no com.appcloner.runtime.PatchProvider"
+              exit 1
+            fi
+            "$BUILD_TOOLS/aapt" dump xmltree "$CLONE_APK" AndroidManifest.xml 2>/dev/null | grep -A 8 "PatchProvider" | head -20 | tee -a verify.txt
+          else
+            echo "::warning title=Runtime patch::no clone APK with an injected runtime patch was produced in this run"
+          fi
+
           if [ -f smoke/output/smoke-report.txt ]; then
-            echo "::notice title=Real APK smoke::$(grep -E 'SMOKE|source=|originalPackage=|part=|leftovers=|Verifies|Verified using v2' verify.txt | tail -10 | tr '\n' '~')"
+            echo "::notice title=Real APK smoke::$(grep -E 'SMOKE|source=|originalPackage=|part=|leftovers=|runtime|Verifies|Verified using v2' verify.txt | tail -12 | tr '\n' '~')"
           else
             echo "::warning title=Real APK smoke::no real APK could be cloned in this run"
           fi
@@ -130,10 +161,17 @@ jobs:
             exit 1
           fi
 
-      - name: Check that Room and the engine made it into the APK
+      - name: Check that Room, the engine and the runtime patch made it into the APK
         if: steps.build.outcome == 'success'
         run: |
           APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
+          # The runtime patch ships as an asset; without it phase 3 features silently do nothing.
+          if unzip -Z1 "$APK" | grep -qx "assets/runtime/patch.dex"; then
+            echo "runtime patch asset: present ($(unzip -p "$APK" assets/runtime/patch.dex | wc -c) bytes)" | tee -a verify.txt
+          else
+            echo "::error title=Runtime patch missing::assets/runtime/patch.dex is not inside the built APK, so cloned apps cannot get runtime features"
+            exit 1
+          fi
           {
             echo "--- generated sources on disk ---";
             find app/build/generated -name "*Impl*" 2>/dev/null | head -10 || true;
@@ -246,4 +284,19 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -f ci-diagnostics/last-run.txt
           git commit -m "ci: diagnostics for run ${GITHUB_RUN_NUMBER} [skip ci]" || exit 0
+          git push origin HEAD:${GITHUB_REF_NAME} || true
+
+      # The patch dex is a build artifact of runtime-src/, but it has to be in the repository: the next run
+      # (and anyone building locally) must be able to package it without a toolchain.
+      - name: Commit the rebuilt runtime patch dex
+        if: always() && steps.runtime-dex.outcome == 'success'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f app/src/main/assets/runtime/patch.dex
+          if git diff --cached --quiet; then
+            echo "the runtime patch dex is unchanged"
+            exit 0
+          fi
+          git commit -m "ci: rebuild the runtime patch dex from runtime-src [skip ci]"
           git push origin HEAD:${GITHUB_REF_NAME} || true

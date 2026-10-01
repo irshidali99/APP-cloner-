@@ -60,6 +60,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -331,6 +332,125 @@ fun CloneSetupScreen(
                         color = Color(0xFF7F1D1D),
                         modifier = Modifier.padding(16.dp)
                     )
+                }
+            }
+
+            // ------------------------------------------------ Runtime features (phase 3)
+            // These options do not fit into a manifest attribute: App Cloner injects a small patch into the
+            // clone (an extra dex file + a bootstrap provider) and configures it through the manifest.
+            val runtime by viewModel.runtimeOptions.collectAsStateWithLifecycle()
+            val passcodeError by viewModel.runtimePasscodeError.collectAsStateWithLifecycle()
+            var lockWanted by remember { mutableStateOf(false) }
+            var passcode by remember { mutableStateOf("") }
+            var passcodeConfirm by remember { mutableStateOf("") }
+
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("runtime_card")
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Runtime features",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    Text(
+                        text = "These options are written into the clone itself (not only its manifest). " +
+                            "The passcode is stored as a hash and cannot be read back.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (!viewModel.runtimeAvailable) {
+                        Text(
+                            text = "This build carries no runtime patch, so these switches are inactive.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.testTag("runtime_unavailable_note")
+                        )
+                    }
+
+                    ModSwitch(
+                        title = "Passcode lock",
+                        subtitle = "The clone asks for a passcode before it opens",
+                        checked = lockWanted
+                    ) { value ->
+                        lockWanted = value
+                        if (value) {
+                            viewModel.setRuntimePasscode(passcode, passcodeConfirm)
+                        } else {
+                            passcode = ""
+                            passcodeConfirm = ""
+                            viewModel.setRuntimePasscode("", "")
+                        }
+                    }
+
+                    if (lockWanted) {
+                        OutlinedTextField(
+                            value = passcode,
+                            onValueChange = { value ->
+                                passcode = value
+                                viewModel.setRuntimePasscode(value, passcodeConfirm)
+                            },
+                            label = { Text("Passcode") },
+                            singleLine = true,
+                            visualTransformation = PasswordVisualTransformation(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("runtime_passcode_field")
+                        )
+                        OutlinedTextField(
+                            value = passcodeConfirm,
+                            onValueChange = { value ->
+                                passcodeConfirm = value
+                                viewModel.setRuntimePasscode(passcode, value)
+                            },
+                            label = { Text("Repeat passcode") },
+                            singleLine = true,
+                            visualTransformation = PasswordVisualTransformation(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("runtime_passcode_confirm_field")
+                        )
+                        passcodeError?.let { message ->
+                            Text(
+                                text = message,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.testTag("runtime_passcode_error")
+                            )
+                        }
+                        Text(
+                            text = "Keep the passcode safe. If it is forgotten, the reset code shown in the " +
+                                "clone's details unlocks the clone once.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    ModSwitch(
+                        title = "Block screenshots",
+                        subtitle = "Screenshots, screen recording and the recents preview are blocked",
+                        checked = runtime.blockScreenshots
+                    ) { value -> viewModel.updateRuntime { it.copy(blockScreenshots = value) } }
+                    ModSwitch(
+                        title = "Incognito",
+                        subtitle = "Everything the clone stored is deleted when you leave it",
+                        checked = runtime.incognitoWipe
+                    ) { value -> viewModel.updateRuntime { it.copy(incognitoWipe = value) } }
+                    ModSwitch(
+                        title = "End with the screen",
+                        subtitle = "The clone closes when the screen is turned off",
+                        checked = runtime.exitOnScreenOff
+                    ) { value -> viewModel.updateRuntime { it.copy(exitOnScreenOff = value) } }
                 }
             }
 

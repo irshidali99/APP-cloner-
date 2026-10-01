@@ -6,6 +6,7 @@ import com.example.model.BatchState
 import com.example.model.CloneConfig
 import com.example.model.CloneMods
 import com.example.model.ClonePreset
+import com.example.model.RuntimeOptions
 import com.example.model.CloneRecord
 import com.example.model.CompatibilityReport
 import com.example.model.InstalledApp
@@ -14,6 +15,7 @@ import com.example.model.PipelineProgress
 import com.example.model.PipelineStage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -320,6 +322,62 @@ class AppClonerLogicTest {
         assertEquals(mods.largeHeap, restored.largeHeap)
         assertEquals(setOf("camera", "location"), restored.removePermissionGroups)
         assertEquals("1.0-clone", restored.versionName)
+    }
+
+    // ------------------------------------------------------------------ runtime features (phase 3)
+
+    @Test
+    fun testRuntimePasscodeIsStoredAsSha256() {
+        // The injected patch computes the very same digest; if this ever changes, locks stop opening.
+        assertEquals(
+            "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
+            RuntimeOptions.hash("1234")
+        )
+        val options = RuntimeOptions(passcodeHash = RuntimeOptions.hash("my pass"))
+        assertTrue(options.lockEnabled)
+        assertTrue(options.matches("my pass"))
+        assertFalse(options.matches("my pass "))
+        assertFalse(RuntimeOptions().lockEnabled)
+    }
+
+    @Test
+    fun testRuntimeConfigStringIsReadableByThePatch() {
+        val options = RuntimeOptions(
+            passcodeHash = RuntimeOptions.hash("1234"),
+            blockScreenshots = true,
+            incognitoWipe = false,
+            exitOnScreenOff = true
+        )
+        assertEquals(
+            "lock=03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4;shots=1;wipe=0;screenoff=1",
+            options.configString()
+        )
+        val empty = RuntimeOptions()
+        assertTrue(empty.isEmpty)
+        assertEquals("lock=;shots=0;wipe=0;screenoff=0", empty.configString())
+    }
+
+    @Test
+    fun testRuntimeResetCodeDependsOnTheClonePackageOnly() {
+        val code = RuntimeOptions.resetCode("com.whatsapp.clone1")
+        assertEquals("25B40423", code)
+        assertEquals(8, code.length)
+        // A different clone of the same app gets a different code.
+        assertNotEquals(code, RuntimeOptions.resetCode("com.whatsapp.clone2"))
+    }
+
+    @Test
+    fun testRuntimeSummaryListsEverySelectedFeature() {
+        val options = RuntimeOptions(
+            passcodeHash = RuntimeOptions.hash("1234"),
+            blockScreenshots = true,
+            incognitoWipe = true
+        )
+        assertEquals(
+            "passcode lock, screenshots blocked, incognito (data wiped on exit)",
+            options.summary()
+        )
+        assertEquals("none", RuntimeOptions().summary())
     }
 
     // ------------------------------------------------------------------ batch cloning

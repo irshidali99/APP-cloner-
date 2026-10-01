@@ -13,7 +13,9 @@ data class CloneConfig(
     val rotationDegrees: Float = 0f,
     val invertColors: Boolean = false,
     /** Manifest level clone mods (launcher, privacy, storage, version, permissions). */
-    val mods: CloneMods = CloneMods()
+    val mods: CloneMods = CloneMods(),
+    /** Runtime features that need code inside the clone (passcode lock, screenshot block, ...). */
+    val runtime: RuntimeOptions = RuntimeOptions()
 ) {
     fun validate(): ValidationResult {
         val trimmedName = cloneName.trim()

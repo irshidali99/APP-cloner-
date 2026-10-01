@@ -238,6 +238,20 @@ class CloneApkBuilder(
             val identity = keystore.identity()
             val unsignedDirectory = File(workspace, "unsigned").apply { mkdirs() }
 
+            // Phase 3: the runtime patch is an extra dex file plus a bootstrap provider. The dex is
+            // prebuilt (assets/runtime/patch.dex), the configuration travels in the manifest.
+            val runtimeOptions = config.runtime
+            val runtimeInjection = com.example.engine.runtime.RuntimePatcher
+                .prepare(context, sourceApk, runtimeOptions)
+            if (runtimeInjection != null) {
+                log("Runtime patch ready: ${runtimeInjection.dexEntryName} (${runtimeOptions.summary()}).")
+            } else if (!runtimeOptions.isEmpty) {
+                log(
+                    "[WARN] Runtime features were requested but this build has no patch dex: " +
+                        "the clone only gets the manifest options."
+                )
+            }
+
             val report: CloneReport
             val parts: List<BundlePart>
 
@@ -250,7 +264,8 @@ class CloneApkBuilder(
                         newPackage = config.clonePackageId,
                         newLabel = config.cloneName,
                         iconPng = iconPng,
-                        mods = config.mods
+                        mods = config.mods,
+                        runtime = runtimeInjection
                     ),
                     certificate = identity.certificate,
                     privateKey = identity.privateKey
@@ -270,7 +285,8 @@ class CloneApkBuilder(
                         newPackage = config.clonePackageId,
                         newLabel = config.cloneName,
                         iconPng = iconPng,
-                        mods = config.mods
+                        mods = config.mods,
+                        runtime = runtimeInjection
                     ),
                     certificate = identity.certificate,
                     privateKey = identity.privateKey
@@ -286,6 +302,9 @@ class CloneApkBuilder(
             }
             if (report.appliedMods.isNotEmpty()) {
                 log("Clone mods applied: ${report.appliedMods.joinToString()}")
+            }
+            report.runtimeDexEntry?.let { entry ->
+                log("Runtime patch injected as $entry (${runtimeOptions.summary()}).")
             }
             if (report.iconEntriesReplaced.isNotEmpty()) {
                 log("Launcher icon replaced: ${report.iconEntriesReplaced.joinToString()}")
@@ -367,7 +386,13 @@ class CloneApkBuilder(
                 bundleParts = outputParts,
                 splitNames = parts.filter { it.isSplit }.mapNotNull { it.splitName },
                 signatureSchemes = schemes,
-                obbFiles = obbFiles
+                obbFiles = obbFiles,
+                runtimeSummary = if (report.runtimeDexEntry != null) runtimeOptions.summary() else "",
+                runtimeResetCode = if (report.runtimeDexEntry != null && runtimeOptions.lockEnabled) {
+                    com.example.model.RuntimeOptions.resetCode(config.clonePackageId)
+                } else {
+                    ""
+                }
             )
 
             unsignedDirectory.deleteRecursively()

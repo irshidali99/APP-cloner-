@@ -1,6 +1,7 @@
 package com.example.engine.core
 
 import com.example.model.CloneMods
+import com.example.model.RuntimeOptions
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -213,6 +214,65 @@ class ManifestPatcherTest {
     fun extractNativeLibsIsWrittenOnTheApplication() {
         val editor = patchWith(CloneMods(extractNativeLibs = true))
         assertEquals(-1, value(editor, element(editor, "application"), "extractNativeLibs"))
+    }
+
+    @Test
+    fun runtimeRegistrationAddsTheBootstrapProviderAndTheLockScreen() {
+        val runtime = RuntimeOptions(passcodeHash = RuntimeOptions.hash("1234"), blockScreenshots = true)
+        val editor = AxmlEditor.parse(TestFixtures.manifestBytes())
+        val applied = RuntimeRegistration.apply(editor, runtime, "com.example.clone.smoke")
+        // Round trip: the platform has to be able to parse what the engine writes.
+        val reparsed = AxmlEditor.parse(editor.toByteArray())
+
+        val provider = reparsed.startElements().firstOrNull { reparsed.elementName(it) == "provider" }
+        assertNotNull("the bootstrap provider was not added: ${dump(reparsed)}", provider)
+        assertEquals(
+            RuntimeRegistration.PROVIDER_CLASS,
+            reparsed.findAttribute(provider!!, ManifestRules.ANDROID_NAMESPACE, "name")
+                ?.let { reparsed.string(it.rawValue) }
+        )
+        assertEquals(
+            "com.example.clone.smoke.appcloner.runtime",
+            reparsed.findAttribute(provider, ManifestRules.ANDROID_NAMESPACE, "authorities")
+                ?.let { reparsed.string(it.rawValue) }
+        )
+        assertEquals(
+            "the provider must stay private to the clone",
+            0,
+            reparsed.findAttribute(provider, ManifestRules.ANDROID_NAMESPACE, "exported")?.valueData
+        )
+
+        val metaData = reparsed.startElements().firstOrNull { reparsed.elementName(it) == "meta-data" }
+        assertNotNull("the configuration meta-data was not added: ${dump(reparsed)}", metaData)
+        assertEquals(
+            RuntimeRegistration.CONFIG_META,
+            reparsed.findAttribute(metaData!!, ManifestRules.ANDROID_NAMESPACE, "name")
+                ?.let { reparsed.string(it.rawValue) }
+        )
+        assertEquals(
+            runtime.configString(),
+            reparsed.findAttribute(metaData, ManifestRules.ANDROID_NAMESPACE, "value")
+                ?.let { reparsed.string(it.rawValue) }
+        )
+
+        val lockScreen = reparsed.startElements().firstOrNull { element ->
+            reparsed.elementName(element) == "activity" &&
+                reparsed.findAttribute(element, ManifestRules.ANDROID_NAMESPACE, "name")
+                    ?.let { reparsed.string(it.rawValue) } == RuntimeRegistration.LOCK_ACTIVITY_CLASS
+        }
+        assertNotNull("the passcode screen was not registered: ${dump(reparsed)}", lockScreen)
+        assertTrue("the report does not mention the lock: $applied", applied.any { it.contains("passcode") })
+        assertTrue("the report does not mention the provider: $applied", applied.any { it.contains("provider") })
+    }
+
+    @Test
+    fun withoutRuntimeOptionsNoExtraComponentsAreAdded() {
+        val editor = AxmlEditor.parse(TestFixtures.manifestBytes())
+        val before = editor.startElements().size
+        val applied = RuntimeRegistration.apply(editor, RuntimeOptions(), "com.example.clone.smoke")
+        assertTrue("nothing should be registered: $applied", applied.isEmpty())
+        assertTrue("the manifest changed", editor.toByteArray().isNotEmpty())
+        assertEquals(before, AxmlEditor.parse(editor.toByteArray()).startElements().size)
     }
 
     @Test

@@ -16,6 +16,7 @@ import com.example.model.CloneRecord
 import com.example.model.CompatibilityReport
 import com.example.model.InstalledApp
 import com.example.model.PipelineProgress
+import com.example.model.RuntimeOptions
 import com.example.model.PipelineStage
 import com.example.model.SettingsData
 import com.example.model.ThemeMode
@@ -158,6 +159,63 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // ------------------------------------------------------------------ runtime features (phase 3)
+
+    /**
+     * Options that need code inside the clone. They are injected as a prebuilt dex file; the configuration
+     * travels in the clone's manifest, so nothing has to be compiled on the phone.
+     */
+    private val _runtimeOptions = MutableStateFlow(RuntimeOptions())
+    val runtimeOptions: StateFlow<RuntimeOptions> = _runtimeOptions.asStateFlow()
+
+    /** Passcode field problem of the setup screen, `null` when the input is usable. */
+    private val _runtimePasscodeError = MutableStateFlow<String?>(null)
+    val runtimePasscodeError: StateFlow<String?> = _runtimePasscodeError.asStateFlow()
+
+    /** True when this build actually carries the runtime patch dex. */
+    val runtimeAvailable: Boolean by lazy {
+        com.example.engine.runtime.RuntimePatcher.isAvailable(getApplication<Application>())
+    }
+
+    fun updateRuntime(transform: (RuntimeOptions) -> RuntimeOptions) {
+        _runtimeOptions.value = transform(_runtimeOptions.value)
+    }
+
+    /**
+     * Stores the passcode as a SHA-256 hash. The raw passcode stays on the screen and is never saved: the
+     * clone can only be unlocked by typing it again.
+     */
+    fun setRuntimePasscode(passcode: String, confirmation: String) {
+        val value = passcode.trim()
+        when {
+            value.isEmpty() -> {
+                _runtimePasscodeError.value = null
+                _runtimeOptions.value = _runtimeOptions.value.copy(passcodeHash = "")
+            }
+            value.length < RuntimeOptions.MIN_PASSCODE_LENGTH -> {
+                _runtimePasscodeError.value =
+                    "The passcode needs at least ${RuntimeOptions.MIN_PASSCODE_LENGTH} characters."
+                _runtimeOptions.value = _runtimeOptions.value.copy(passcodeHash = "")
+            }
+            value != confirmation.trim() -> {
+                _runtimePasscodeError.value = "The two passcodes do not match."
+                _runtimeOptions.value = _runtimeOptions.value.copy(passcodeHash = "")
+            }
+            else -> {
+                _runtimePasscodeError.value = null
+                _runtimeOptions.value = _runtimeOptions.value.copy(
+                    passcodeHash = RuntimeOptions.hash(value)
+                )
+            }
+        }
+    }
+
+    /** Clears the passcode fields when a new app is set up. */
+    fun resetRuntimeOptions() {
+        _runtimeOptions.value = RuntimeOptions()
+        _runtimePasscodeError.value = null
+    }
+
     /** Saved clone setups (presets). */
     val presets: StateFlow<List<ClonePreset>> = cloneRepository.allPresets.stateIn(
         scope = viewModelScope,
@@ -218,6 +276,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun prepareCloneSetup(installedApp: InstalledApp) {
         selectedAppForSetup.value = installedApp
         compatibilityReport.value = cloneApkBuilder.checkCompatibility(installedApp)
+        // A passcode belongs to one clone: never carry it over to the next app.
+        resetRuntimeOptions()
 
         viewModelScope.launch {
             val clonesForApp = cloneRepository.getClonesForSource(installedApp.packageName).first()
@@ -390,7 +450,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     badgeColor = colorValue,
                     rotationDegrees = rotation,
                     invertColors = invert,
-                    mods = mods
+                    mods = mods,
+                    runtime = _runtimeOptions.value
                 )
 
                 val result = cloneApkBuilder.executeClonePipeline(
@@ -417,7 +478,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         certificateFingerprint = outcome.certificateFingerprint,
                         splitNames = outcome.splitNames.joinToString(", "),
                         modsSummary = outcome.report.appliedMods.joinToString(", "),
-                        obbFiles = outcome.obbFiles.joinToString(", ") { it.name }
+                        obbFiles = outcome.obbFiles.joinToString(", ") { it.name },
+                        runtimeSummary = outcome.runtimeSummary,
+                        runtimeResetCode = outcome.runtimeResetCode
                     )
                     cloneRepository.saveClone(record)
                     updateBatchItem(app.packageName) { item ->
@@ -509,8 +572,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             badgeColor = badgeColor.value,
             rotationDegrees = rotationDegrees.value,
             invertColors = invertColors.value,
-            mods = cloneMods.value
+            mods = cloneMods.value,
+            runtime = _runtimeOptions.value
         )
+
+        val passcodeError = _runtimePasscodeError.value
+        if (passcodeError != null) {
+            _cloningProgress.value = PipelineProgress(
+                stage = PipelineStage.FAILED,
+                progressFraction = 0f,
+                detailMessage = passcodeError,
+                isFailed = true,
+                errorMessage = passcodeError
+            )
+            onStarted()
+            return
+        }
 
         val validation = config.validate()
         if (!validation.isValid) {
@@ -562,7 +639,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     certificateFingerprint = outcome.certificateFingerprint,
                     splitNames = outcome.splitNames.joinToString(", "),
                     modsSummary = outcome.report.appliedMods.joinToString(", "),
-                    obbFiles = outcome.obbFiles.joinToString(", ") { it.name }
+                    obbFiles = outcome.obbFiles.joinToString(", ") { it.name },
+                    runtimeSummary = outcome.runtimeSummary,
+                    runtimeResetCode = outcome.runtimeResetCode
                 )
                 val id = cloneRepository.saveClone(newRecord)
                 val savedRecord = newRecord.copy(id = id)

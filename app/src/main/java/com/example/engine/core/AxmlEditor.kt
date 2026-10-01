@@ -168,6 +168,41 @@ class AxmlEditor private constructor(
         }
     }
 
+    /**
+     * Adds an empty child element at the end of [parent]'s children.
+     *
+     * Used to register components the original manifest does not have (the runtime patch provider and
+     * its lock activity). The new element is inserted right before the parent's end tag, so document
+     * order - and with it every offset the platform cares about - stays intact.
+     */
+    fun addChildElement(parent: AxmlNode.StartElement, name: String): AxmlNode.StartElement {
+        val endOfParent = findParentEnd(parent)
+        if (endOfParent < 0) throw IllegalArgumentException("element ${string(parent.name)} is not closed")
+        val element = AxmlNode.StartElement(NO_INDEX, intern(name), NO_INDEX, NO_INDEX, NO_INDEX)
+        val end = AxmlNode.EndElement(element.namespace, element.name)
+        nodes.add(endOfParent, element)
+        nodes.add(endOfParent + 1, end)
+        return element
+    }
+
+    /** Index of the end tag of [element], or -1 when the document does not close it. */
+    private fun findParentEnd(element: AxmlNode.StartElement): Int {
+        val start = nodes.indexOf(element)
+        if (start < 0) return -1
+        var depth = 0
+        for (index in start until nodes.size) {
+            when (nodes[index]) {
+                is AxmlNode.StartElement -> depth++
+                is AxmlNode.EndElement -> {
+                    depth--
+                    if (depth == 0) return index
+                }
+                else -> Unit
+            }
+        }
+        return -1
+    }
+
     /** Serialises the document back into a binary XML file. */
     fun toByteArray(): ByteArray {
         val writer = LeWriter(estimateSize())
